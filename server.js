@@ -165,7 +165,11 @@ async function handleTextMessage(event) {
       return handleSubscription(event, userId);
 
     default:
-      return null;
+      // Echo back for debug
+      return client.replyMessage({
+        replyToken: event.replyToken,
+        messages: [{ type: 'text', text: `ได้รับข้อความ: "${text}"` }],
+      });
   }
 }
 
@@ -178,7 +182,7 @@ async function handleCreateImage(event, userId) {
   if (!user || !user.isActive) {
     return client.replyMessage({
       replyToken: event.replyToken,
-      messages: [lockedMessage('สร้างรูปภาพ')],
+      messages: [{ type: 'text', text: '🔒 สร้างรูปภาพต้องสมัครสมาชิกก่อนนะครับ\nกดปุ่ม "สมัครสมาชิก" เพื่อดูแผนราคา' }],
     });
   }
 
@@ -259,16 +263,7 @@ async function handleCreateVideo(event, userId) {
 async function handleSubscription(event, userId) {
   return client.replyMessage({
     replyToken: event.replyToken,
-    messages: [
-      {
-        type: 'flex',
-        altText: 'เลือกแผนสมาชิก',
-        contents: {
-          type: 'carousel',
-          contents: [trailerBubble(userId), vipBubble(userId)],
-        },
-      },
-    ],
+    messages: [{ type: 'text', text: '💎 แผนสมาชิก:\n\n🎬 Trailer - 199 บาท/เดือน\n⭐ VIP - 1,999 บาท/ปี\n\nโอนผ่าน PromptPay: 093-495-8855\nแล้วส่งสลิปมาที่แชทนี้เลยครับ' }],
   });
 }
 
