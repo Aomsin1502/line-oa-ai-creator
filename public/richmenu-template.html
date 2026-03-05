@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <title>Rich Menu Template — 2500×843</title>
+  <style>
+    body { margin: 0; background: #555; display: flex; flex-direction: column; align-items: center; padding: 24px; font-family: 'Segoe UI', sans-serif; }
+    h2 { color: #fff; margin-bottom: 12px; font-size: 18px; }
+    p  { color: #ddd; font-size: 13px; margin-bottom: 20px; text-align: center; }
+    canvas { border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,.5); cursor: pointer; max-width: 100%; }
+    .dl-btn {
+      margin-top: 18px;
+      padding: 12px 32px;
+      background: #6C63FF;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .dl-btn:hover { background: #5a52d5; }
+  </style>
+</head>
+<body>
+  <h2>Rich Menu Image (2500 × 843 px)</h2>
+  <p>คลิกปุ่มด้านล่างเพื่อดาวน์โหลด แล้วบันทึกเป็น <strong>public/richmenu.png</strong></p>
+  <canvas id="c" width="2500" height="843"></canvas>
+  <button class="dl-btn" onclick="download()">⬇️ ดาวน์โหลด richmenu.png</button>
+
+  <script>
+    const c = document.getElementById('c');
+    const ctx = c.getContext('2d');
+    const W = 2500, H = 843;
+    const COL = W / 3; // 833
+
+    // ── Backgrounds ──────────────────────────────
+    // Left: Create Image (#6C63FF purple)
+    const g1 = ctx.createLinearGradient(0, 0, COL, H);
+    g1.addColorStop(0, '#6C63FF');
+    g1.addColorStop(1, '#4B45CC');
+    ctx.fillStyle = g1;
+    ctx.fillRect(0, 0, COL, H);
+
+    // Middle: Create Video — locked (#2C3E50 dark)
+    const g2 = ctx.createLinearGradient(COL, 0, COL * 2, H);
+    g2.addColorStop(0, '#2C3E50');
+    g2.addColorStop(1, '#1a252f');
+    ctx.fillStyle = g2;
+    ctx.fillRect(COL, 0, COL, H);
+
+    // Right: Subscribe (#E74C3C red)
+    const g3 = ctx.createLinearGradient(COL * 2, 0, W, H);
+    g3.addColorStop(0, '#E74C3C');
+    g3.addColorStop(1, '#C0392B');
+    ctx.fillStyle = g3;
+    ctx.fillRect(COL * 2, 0, COL, H);
+
+    // ── Dividers ──────────────────────────────────
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(COL, 0); ctx.lineTo(COL, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(COL * 2, 0); ctx.lineTo(COL * 2, H); ctx.stroke();
+
+    // ── Helper: centered text ──────────────────────
+    function drawText(text, x, y, size, color, weight='bold') {
+      ctx.font = `${weight} ${size}px 'Segoe UI', sans-serif`;
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, x, y);
+    }
+
+    // ── Helper: rounded rect ──────────────────────
+    function roundRect(x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    const cx1 = COL / 2;
+    const cx2 = COL + COL / 2;
+    const cx3 = COL * 2 + COL / 2;
+    const midY = H / 2;
+
+    // ── Section 1: สร้างรูป ──────────────────────
+    // White circle background
+    ctx.beginPath();
+    ctx.arc(cx1, midY - 80, 110, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.fill();
+
+    drawText('🎨', cx1, midY - 80, 120, '#fff');
+    drawText('สร้างรูป', cx1, midY + 80, 72, '#ffffff');
+    drawText('AI Image Creator', cx1, midY + 170, 38, 'rgba(255,255,255,0.75)', 'normal');
+
+    // Label pill
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    roundRect(cx1 - 160, H - 130, 320, 70, 35);
+    ctx.fill();
+    drawText('✅ เปิดใช้งาน', cx1, H - 95, 36, '#fff');
+
+    // ── Section 2: สร้างวิดีโอ (locked) ──────────
+    ctx.beginPath();
+    ctx.arc(cx2, midY - 80, 110, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    ctx.fill();
+
+    drawText('🎬', cx2, midY - 80, 120, 'rgba(255,255,255,0.4)');
+    drawText('สร้างวิดีโอ', cx2, midY + 80, 72, 'rgba(255,255,255,0.5)');
+    drawText('AI Video Creator', cx2, midY + 170, 38, 'rgba(255,255,255,0.35)', 'normal');
+
+    // Lock icon overlay
+    drawText('🔒', cx2, midY - 80, 100, 'rgba(255,255,255,0.85)');
+
+    // Locked pill
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    roundRect(cx2 - 180, H - 130, 360, 70, 35);
+    ctx.fill();
+    drawText('🔒 ต้องสมัครสมาชิก', cx2, H - 95, 34, 'rgba(255,255,255,0.6)');
+
+    // ── Section 3: สมัครสมาชิก ──────────────────
+    ctx.beginPath();
+    ctx.arc(cx3, midY - 80, 110, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.fill();
+
+    drawText('💎', cx3, midY - 80, 120, '#fff');
+    drawText('สมัครสมาชิก', cx3, midY + 80, 68, '#ffffff');
+    drawText('Trailer / VIP', cx3, midY + 170, 40, 'rgba(255,255,255,0.75)', 'normal');
+
+    // Price labels
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    roundRect(cx3 - 200, H - 145, 400, 90, 14);
+    ctx.fill();
+    drawText('Trailer 199 ฿  |  VIP 1,999 ฿', cx3, H - 100, 36, '#fff');
+
+    // ── Download function ──────────────────────────
+    function download() {
+      const a = document.createElement('a');
+      a.download = 'richmenu.png';
+      a.href = c.toDataURL('image/png');
+      a.click();
+    }
+  </script>
+</body>
+</html>

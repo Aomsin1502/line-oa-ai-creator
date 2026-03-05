@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>สร้างวิดีโอ AI</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', 'Sarabun', sans-serif;
+      background: linear-gradient(135deg, #c0392b 0%, #8e0000 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 24px;
+      padding: 32px 28px;
+      max-width: 480px;
+      width: 100%;
+      box-shadow: 0 24px 64px rgba(0,0,0,.25);
+      margin-top: 16px;
+    }
+
+    .header { text-align: center; margin-bottom: 28px; }
+    .header .icon { font-size: 52px; margin-bottom: 10px; }
+    .header h1 { font-size: 22px; color: #333; }
+    .plan-badge {
+      display: inline-block;
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      margin-top: 8px;
+    }
+
+    label { display: block; font-size: 14px; font-weight: 600; color: #444; margin-bottom: 8px; }
+
+    textarea {
+      width: 100%;
+      padding: 14px;
+      border: 2px solid #e5e5e5;
+      border-radius: 14px;
+      font-size: 15px;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 120px;
+      transition: border-color .25s;
+      color: #333;
+    }
+    textarea:focus { outline: none; border-color: #E74C3C; }
+
+    /* Duration selector */
+    .duration-section { margin: 16px 0; }
+    .duration-section label { margin-bottom: 10px; }
+    .duration-info {
+      background: #fff5f5;
+      border-left: 4px solid #E74C3C;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      color: #555;
+      line-height: 1.7;
+    }
+    .duration-info .limit { color: #E74C3C; font-weight: 700; font-size: 15px; }
+    .duration-info .plan-name { color: #c0392b; font-weight: 600; }
+
+    .duration-slider-wrap { margin-top: 12px; }
+    input[type="range"] {
+      width: 100%;
+      accent-color: #E74C3C;
+      height: 6px;
+      cursor: pointer;
+    }
+    .duration-display {
+      text-align: center;
+      font-size: 28px;
+      font-weight: 700;
+      color: #E74C3C;
+      margin: 6px 0 2px;
+    }
+    .duration-display span { font-size: 14px; color: #999; font-weight: 400; }
+
+    .hint-box {
+      background: #fff5f5;
+      border-left: 4px solid #E74C3C;
+      padding: 12px 16px;
+      border-radius: 10px;
+      margin: 16px 0 20px;
+      font-size: 13px;
+      color: #555;
+      line-height: 1.6;
+    }
+    .hint-box strong { color: #E74C3C; }
+
+    .btn-create {
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, #E74C3C, #c0392b);
+      color: #fff;
+      border: none;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: .4px;
+      transition: transform .2s, box-shadow .2s;
+    }
+    .btn-create:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(231,76,60,.4); }
+    .btn-create:active { transform: translateY(0); }
+    .btn-create:disabled { opacity: .65; cursor: not-allowed; transform: none; }
+
+    /* Loading */
+    .loading { display: none; text-align: center; padding: 36px 16px; }
+    .spinner {
+      width: 52px; height: 52px;
+      border: 5px solid #ffe5e5;
+      border-top: 5px solid #E74C3C;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-msg { font-size: 15px; color: #555; animation: pulse 1.6s ease-in-out infinite; }
+    .loading-sub { font-size: 12px; color: #999; margin-top: 6px; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    /* Progress bar */
+    .progress-bar-wrap { width: 100%; background: #f5f5f5; border-radius: 10px; height: 10px; margin-top: 16px; overflow: hidden; }
+    .progress-bar { height: 10px; background: linear-gradient(90deg, #E74C3C, #FF6B6B); border-radius: 10px; width: 0%; transition: width .5s ease; }
+    .progress-label { font-size: 12px; color: #888; margin-top: 6px; }
+
+    /* Result */
+    .result { display: none; margin-top: 24px; }
+    .result-placeholder {
+      background: #111;
+      border-radius: 16px;
+      aspect-ratio: 16/9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      color: #fff;
+      gap: 10px;
+    }
+    .result-placeholder .play-icon { font-size: 48px; }
+    .result-placeholder p { font-size: 14px; color: #ccc; }
+    .result-actions { display: flex; gap: 10px; margin-top: 14px; }
+    .result-actions button {
+      flex: 1; padding: 13px; border-radius: 12px; border: none;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .btn-dl { background: #27AE60; color: #fff; }
+    .btn-retry { background: #f0f0f0; color: #333; }
+
+    .error-box {
+      display: none;
+      background: #fff5f5;
+      border-left: 4px solid #E74C3C;
+      padding: 12px 16px;
+      border-radius: 10px;
+      margin-top: 14px;
+      font-size: 14px;
+      color: #c0392b;
+    }
+
+    .examples { margin: 14px 0 0; }
+    .examples p { font-size: 12px; color: #888; margin-bottom: 6px; }
+    .example-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip {
+      background: #fff5f5;
+      color: #E74C3C;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      cursor: pointer;
+      border: 1px solid #ffd5d5;
+    }
+    .chip:hover { background: #ffe5e5; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="icon">🎬</div>
+      <h1>สร้างวิดีโอ AI</h1>
+      <div class="plan-badge" id="planBadge">กำลังโหลด...</div>
+    </div>
+
+    <div id="formSection">
+      <label>✏️ คำอธิบายวิดีโอที่ต้องการสร้าง</label>
+      <textarea
+        id="prompt"
+        placeholder="เช่น: คลื่นทะเลซัดหาดทรายขาวในยามเย็น ท้องฟ้าสีทอง ..."
+        rows="5"
+      ></textarea>
+
+      <div class="examples">
+        <p>💡 ตัวอย่าง (คลิกเพื่อใช้):</p>
+        <div class="example-chips">
+          <span class="chip" onclick="useExample(this)">น้ำตกในป่าเขตร้อน หมอกลอยเหนือน้ำ</span>
+          <span class="chip" onclick="useExample(this)">ดาวตกยามค่ำคืน ท้องฟ้าเต็มไปด้วยดาว</span>
+          <span class="chip" onclick="useExample(this)">รถสปอร์ตวิ่งบนถนนเปลี่ยว</span>
+        </div>
+      </div>
+
+      <div class="duration-section" style="margin-top:20px;">
+        <label>⏱ ระยะเวลาวิดีโอ</label>
+        <div class="duration-info">
+          <div>แผน: <span class="plan-name" id="planName">...</span></div>
+          <div>ระยะเวลาสูงสุดที่สร้างได้: <span class="limit" id="maxDurationText">...</span></div>
+        </div>
+        <div class="duration-slider-wrap">
+          <div class="duration-display"><span id="sliderVal">1</span> <span>นาที</span></div>
+          <input type="range" id="durationSlider" min="1" max="5" value="1" step="1" oninput="updateSlider(this.value)" />
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:#aaa;margin-top:4px;">
+            <span>1 นาที</span>
+            <span id="maxLabel">5 นาที</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="hint-box" style="margin-top:16px;">
+        <strong>⏳ เวลาประมวลผล:</strong> ประมาณ 1–3 นาทีต่อนาทีของวิดีโอ<br>
+        <strong>💡 เคล็ดลับ:</strong> อธิบาย scene ให้ชัดเจนเพื่อผลลัพธ์ที่ดีขึ้น
+      </div>
+
+      <button class="btn-create" id="createBtn" onclick="createVideo()">
+        🎬 สร้างวิดีโอ
+      </button>
+
+      <div class="error-box" id="errorBox"></div>
+    </div>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p class="loading-msg" id="loadingMsg">กำลังประมวลผลวิดีโอ...</p>
+      <p class="loading-sub">อาจใช้เวลาสักครู่ กรุณาอย่าปิดหน้านี้</p>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+      <p class="progress-label" id="progressLabel">0%</p>
+    </div>
+
+    <div class="result" id="result">
+      <div class="result-placeholder">
+        <div class="play-icon">▶️</div>
+        <p id="resultLabel">วิดีโอสร้างสำเร็จ!</p>
+      </div>
+      <div class="result-actions">
+        <button class="btn-dl" onclick="resetForm()">🔄 สร้างใหม่</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const plan = params.get('plan') || 'trailer';
+    const maxDuration = parseInt(params.get('maxDuration') || '5');
+
+    // Set plan badge & info
+    const badge = document.getElementById('planBadge');
+    const planName = document.getElementById('planName');
+    const maxText = document.getElementById('maxDurationText');
+    const slider = document.getElementById('durationSlider');
+    const maxLabel = document.getElementById('maxLabel');
+
+    if (plan === 'vip') {
+      badge.textContent = '⭐ VIP';
+      badge.style.background = '#8E44AD';
+      planName.textContent = 'VIP (1 ปี)';
+    } else {
+      badge.textContent = '🎬 Trailer';
+      badge.style.background = '#27AE60';
+      planName.textContent = 'Trailer (1 เดือน)';
+    }
+
+    maxText.textContent = `${maxDuration} นาที`;
+    slider.max = maxDuration;
+    maxLabel.textContent = `${maxDuration} นาที`;
+
+    function updateSlider(val) {
+      document.getElementById('sliderVal').textContent = val;
+    }
+
+    function useExample(el) {
+      document.getElementById('prompt').value = el.textContent;
+      document.getElementById('prompt').focus();
+    }
+
+    const LOADING_MSGS = [
+      'กำลังประมวลผลวิดีโอ...',
+      'AI กำลังสร้าง frames...',
+      'กำลังประกอบฉาก...',
+      'กำลัง render วิดีโอ...',
+      'เกือบเสร็จแล้ว...',
+    ];
+
+    async function createVideo() {
+      const prompt = document.getElementById('prompt').value.trim();
+      const duration = parseInt(document.getElementById('durationSlider').value);
+
+      if (!prompt) { showError('กรุณาใส่คำอธิบายวิดีโอ'); return; }
+      if (prompt.length < 5) { showError('คำอธิบายต้องมีอย่างน้อย 5 ตัวอักษร'); return; }
+
+      document.getElementById('createBtn').disabled = true;
+      document.getElementById('errorBox').style.display = 'none';
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('result').style.display = 'none';
+
+      // Simulate progress
+      let progress = 0;
+      const totalMs = duration * 60 * 1000; // rough: 1 min per minute of video
+      const interval = 800;
+      const increment = (interval / totalMs) * 100;
+
+      let msgIdx = 0;
+      const ticker = setInterval(() => {
+        document.getElementById('loadingMsg').textContent = LOADING_MSGS[msgIdx++ % LOADING_MSGS.length];
+        progress = Math.min(progress + increment, 95);
+        document.getElementById('progressBar').style.width = progress + '%';
+        document.getElementById('progressLabel').textContent = Math.floor(progress) + '%';
+      }, interval);
+
+      // Simulate video generation (replace with real API call)
+      await new Promise(r => setTimeout(r, Math.max(5000, duration * 8000)));
+
+      clearInterval(ticker);
+      document.getElementById('progressBar').style.width = '100%';
+      document.getElementById('progressLabel').textContent = '100%';
+
+      await new Promise(r => setTimeout(r, 600));
+
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('resultLabel').textContent = `✅ วิดีโอ ${duration} นาที สร้างสำเร็จ!`;
+      document.getElementById('result').style.display = 'block';
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('errorBox');
+      el.textContent = '❌ ' + msg;
+      el.style.display = 'block';
+    }
+
+    function resetForm() {
+      document.getElementById('result').style.display = 'none';
+      document.getElementById('createBtn').disabled = false;
+      document.getElementById('prompt').value = '';
+      document.getElementById('durationSlider').value = 1;
+      updateSlider(1);
+      document.getElementById('progressBar').style.width = '0%';
+      document.getElementById('progressLabel').textContent = '0%';
+    }
+  </script>
+</body>
+</html>

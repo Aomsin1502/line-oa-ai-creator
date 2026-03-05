@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>สร้างรูปภาพ AI</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', 'Sarabun', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 24px;
+      padding: 32px 28px;
+      max-width: 480px;
+      width: 100%;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.2);
+      margin-top: 16px;
+    }
+
+    /* ── Header ── */
+    .header { text-align: center; margin-bottom: 28px; }
+    .header .icon { font-size: 52px; margin-bottom: 10px; }
+    .header h1 { font-size: 22px; color: #333; }
+    .plan-badge {
+      display: inline-block;
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      margin-top: 8px;
+    }
+
+    /* ── Form ── */
+    label { display: block; font-size: 14px; font-weight: 600; color: #444; margin-bottom: 8px; }
+
+    textarea {
+      width: 100%;
+      padding: 14px;
+      border: 2px solid #e5e5e5;
+      border-radius: 14px;
+      font-size: 15px;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 120px;
+      transition: border-color .25s;
+      color: #333;
+    }
+    textarea:focus { outline: none; border-color: #6C63FF; }
+
+    .hint-box {
+      background: #f0efff;
+      border-left: 4px solid #6C63FF;
+      padding: 12px 16px;
+      border-radius: 10px;
+      margin: 16px 0 20px;
+      font-size: 13px;
+      color: #555;
+      line-height: 1.6;
+    }
+    .hint-box strong { color: #6C63FF; }
+
+    /* ── Button ── */
+    .btn-create {
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, #6C63FF, #764ba2);
+      color: #fff;
+      border: none;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: .4px;
+      transition: transform .2s, box-shadow .2s;
+    }
+    .btn-create:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(108,99,255,.4); }
+    .btn-create:active { transform: translateY(0); }
+    .btn-create:disabled { opacity: .65; cursor: not-allowed; transform: none; }
+
+    /* ── Loading ── */
+    .loading { display: none; text-align: center; padding: 36px 16px; }
+    .spinner {
+      width: 52px; height: 52px;
+      border: 5px solid #ececff;
+      border-top: 5px solid #6C63FF;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-msg { font-size: 15px; color: #555; animation: pulse 1.6s ease-in-out infinite; }
+    .loading-sub { font-size: 12px; color: #999; margin-top: 6px; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    /* ── Result ── */
+    .result { display: none; margin-top: 24px; }
+    .result img {
+      width: 100%;
+      border-radius: 16px;
+      box-shadow: 0 8px 28px rgba(0,0,0,.15);
+      display: block;
+    }
+    .result-actions { display: flex; gap: 10px; margin-top: 14px; }
+    .result-actions button {
+      flex: 1; padding: 13px; border-radius: 12px; border: none;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .btn-dl { background: #27AE60; color: #fff; }
+    .btn-dl:hover { background: #219a52; }
+    .btn-retry { background: #f0f0f0; color: #333; }
+    .btn-retry:hover { background: #e0e0e0; }
+
+    /* ── Error ── */
+    .error-box {
+      display: none;
+      background: #fff5f5;
+      border-left: 4px solid #E74C3C;
+      padding: 12px 16px;
+      border-radius: 10px;
+      margin-top: 14px;
+      font-size: 14px;
+      color: #c0392b;
+    }
+
+    /* ── Examples ── */
+    .examples { margin: 14px 0 0; }
+    .examples p { font-size: 12px; color: #888; margin-bottom: 6px; }
+    .example-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip {
+      background: #f0efff;
+      color: #6C63FF;
+      padding: 5px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      cursor: pointer;
+      border: 1px solid #d5d0ff;
+      transition: background .2s;
+    }
+    .chip:hover { background: #e0dcff; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="icon">🎨</div>
+      <h1>สร้างรูปภาพ AI</h1>
+      <div class="plan-badge" id="planBadge">กำลังโหลด...</div>
+    </div>
+
+    <div id="formSection">
+      <label>✏️ คำอธิบายรูปที่ต้องการสร้าง</label>
+      <textarea
+        id="prompt"
+        placeholder="เช่น: แมวสีขาวนั่งบนหน้าต่าง มองพระอาทิตย์ตก สไตล์อนิเมะ ..."
+        rows="5"
+      ></textarea>
+
+      <div class="examples">
+        <p>💡 ตัวอย่าง (คลิกเพื่อใช้):</p>
+        <div class="example-chips">
+          <span class="chip" onclick="useExample(this)">มังกรบินเหนือปราสาทในป่า</span>
+          <span class="chip" onclick="useExample(this)">วิวภูเขาหิมะยามพระอาทิตย์ขึ้น</span>
+          <span class="chip" onclick="useExample(this)">แมวอวกาศสวมชุดนักบิน</span>
+          <span class="chip" onclick="useExample(this)">สาวอนิเมะถือดอกซากุระ</span>
+        </div>
+      </div>
+
+      <div class="hint-box">
+        <strong>⏱ ระยะเวลาสร้าง:</strong> ประมาณ 15–30 วินาที<br>
+        <strong>💡 เคล็ดลับ:</strong> ยิ่งอธิบายละเอียด ยิ่งได้ภาพตรงใจ
+      </div>
+
+      <button class="btn-create" id="createBtn" onclick="createImage()">
+        ✨ สร้างรูปภาพ
+      </button>
+
+      <div class="error-box" id="errorBox"></div>
+    </div>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p class="loading-msg" id="loadingMsg">กำลังสร้างรูปภาพ...</p>
+      <p class="loading-sub">อาจใช้เวลา 15–30 วินาที</p>
+    </div>
+
+    <div class="result" id="result">
+      <img id="resultImg" src="" alt="Generated Image" />
+      <div class="result-actions">
+        <button class="btn-dl" onclick="downloadImg()">⬇️ ดาวน์โหลด</button>
+        <button class="btn-retry" onclick="resetForm()">🔄 สร้างใหม่</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const plan = params.get('plan');
+
+    // Set plan badge
+    const badge = document.getElementById('planBadge');
+    if (plan === 'vip') {
+      badge.textContent = '⭐ VIP';
+      badge.style.background = '#8E44AD';
+    } else if (plan === 'trailer') {
+      badge.textContent = '🎬 Trailer';
+      badge.style.background = '#27AE60';
+    } else {
+      badge.textContent = '👤 ผู้เยี่ยมชม';
+      badge.style.background = '#95a5a6';
+    }
+
+    let generatedUrl = null;
+
+    const LOADING_MSGS = [
+      'กำลังสร้างรูปภาพ...',
+      'AI กำลังวาดภาพ...',
+      'กำลังเพิ่มรายละเอียด...',
+      'เกือบเสร็จแล้ว...',
+    ];
+
+    function useExample(el) {
+      document.getElementById('prompt').value = el.textContent;
+      document.getElementById('prompt').focus();
+    }
+
+    async function createImage() {
+      const prompt = document.getElementById('prompt').value.trim();
+      if (!prompt) { showError('กรุณาใส่คำอธิบายรูปภาพ'); return; }
+      if (prompt.length < 3) { showError('คำอธิบายต้องมีอย่างน้อย 3 ตัวอักษร'); return; }
+
+      // UI: show loading
+      document.getElementById('createBtn').disabled = true;
+      document.getElementById('errorBox').style.display = 'none';
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('result').style.display = 'none';
+
+      let idx = 0;
+      const ticker = setInterval(() => {
+        document.getElementById('loadingMsg').textContent = LOADING_MSGS[idx++ % LOADING_MSGS.length];
+      }, 3500);
+
+      try {
+        const seed = Math.floor(Math.random() * 999999);
+        const encoded = encodeURIComponent(prompt);
+        // Pollinations.ai — free, no API key needed
+        const url = `https://image.pollinations.ai/prompt/${encoded}?seed=${seed}&width=1024&height=1024&nologo=true`;
+
+        // Wait for image to load
+        await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = resolve;
+          img.onerror = () => reject(new Error('load_failed'));
+          img.src = url;
+          setTimeout(() => reject(new Error('timeout')), 90000);
+        });
+
+        generatedUrl = url;
+        clearInterval(ticker);
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('resultImg').src = url;
+        document.getElementById('result').style.display = 'block';
+
+      } catch (err) {
+        clearInterval(ticker);
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('createBtn').disabled = false;
+        showError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
+      }
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('errorBox');
+      el.textContent = '❌ ' + msg;
+      el.style.display = 'block';
+    }
+
+    async function downloadImg() {
+      if (!generatedUrl) return;
+      try {
+        const res = await fetch(generatedUrl);
+        const blob = await res.blob();
+        const a = Object.assign(document.createElement('a'), {
+          href: URL.createObjectURL(blob),
+          download: `ai-image-${Date.now()}.jpg`,
+        });
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } catch {
+        window.open(generatedUrl, '_blank');
+      }
+    }
+
+    function resetForm() {
+      generatedUrl = null;
+      document.getElementById('result').style.display = 'none';
+      document.getElementById('createBtn').disabled = false;
+      document.getElementById('prompt').value = '';
+      document.getElementById('prompt').focus();
+    }
+  </script>
+</body>
+</html>
