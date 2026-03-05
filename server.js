@@ -182,7 +182,7 @@ async function handleCreateImage(event, userId) {
   if (!user || !user.isActive) {
     return client.replyMessage({
       replyToken: event.replyToken,
-      messages: [{ type: 'text', text: '🔒 สร้างรูปภาพต้องสมัครสมาชิกก่อนนะครับ\nกดปุ่ม "สมัครสมาชิก" เพื่อดูแผนราคา' }],
+      messages: [lockedMessage('สร้างรูปภาพ')],
     });
   }
 
@@ -206,7 +206,7 @@ async function handleCreateImage(event, userId) {
           },
           footer: {
             type: 'box', layout: 'vertical',
-            contents: [{ type: 'button', style: 'primary', color: '#6C63FF', action: { type: 'uri', label: '🎨 เปิดหน้าสร้างรูป', uri: pageUrl } }],
+            contents: [{ type: 'button', style: 'link', color: '#6C63FF', action: { type: 'uri', label: '🎨 เปิดหน้าสร้างรูป', uri: pageUrl } }],
           },
         },
       },
@@ -249,7 +249,7 @@ async function handleCreateVideo(event, userId) {
           },
           footer: {
             type: 'box', layout: 'vertical',
-            contents: [{ type: 'button', style: 'primary', color: '#E74C3C', action: { type: 'uri', label: '🎬 เปิดหน้าสร้างวิดีโอ', uri: pageUrl } }],
+            contents: [{ type: 'button', style: 'link', color: '#E74C3C', action: { type: 'uri', label: '🎬 เปิดหน้าสร้างวิดีโอ', uri: pageUrl } }],
           },
         },
       },
@@ -263,7 +263,16 @@ async function handleCreateVideo(event, userId) {
 async function handleSubscription(event, userId) {
   return client.replyMessage({
     replyToken: event.replyToken,
-    messages: [{ type: 'text', text: '💎 แผนสมาชิก:\n\n🎬 Trailer - 199 บาท/เดือน\n⭐ VIP - 1,999 บาท/ปี\n\nโอนผ่าน PromptPay: 093-495-8855\nแล้วส่งสลิปมาที่แชทนี้เลยครับ' }],
+    messages: [
+      {
+        type: 'flex',
+        altText: 'เลือกแผนสมาชิก',
+        contents: {
+          type: 'carousel',
+          contents: [trailerBubble(userId), vipBubble(userId)],
+        },
+      },
+    ],
   });
 }
 
@@ -295,7 +304,7 @@ function trailerBubble(userId) {
     footer: {
       type: 'box', layout: 'vertical',
       contents: [{
-        type: 'button', style: 'primary', color: '#27AE60',
+        type: 'button', style: 'primary',
         action: { type: 'postback', label: 'สมัคร 199 บาท', data: `action=pay&plan=trailer&userId=${userId}` },
       }],
     },
@@ -315,7 +324,7 @@ function vipBubble(userId) {
             {
               type: 'box', layout: 'vertical', backgroundColor: '#FFD700',
               paddingAll: '4px', cornerRadius: '4px',
-              contents: [{ type: 'text', text: 'BEST VALUE', size: 'xxs', color: '#6B3E00', weight: 'bold' }],
+              contents: [{ type: 'text', text: 'BEST VALUE', size: 'xs', color: '#6B3E00', weight: 'bold' }],
             },
           ],
         },
@@ -342,7 +351,7 @@ function vipBubble(userId) {
     footer: {
       type: 'box', layout: 'vertical',
       contents: [{
-        type: 'button', style: 'primary', color: '#8E44AD',
+        type: 'button', style: 'primary',
         action: { type: 'postback', label: 'สมัคร 1,999 บาท', data: `action=pay&plan=vip&userId=${userId}` },
       }],
     },
@@ -406,9 +415,8 @@ async function handleSlipImage(event) {
       messages: [
         {
           type: 'text',
-          text: `📨 สลิปชำระเงินจาก: ${userId}\n\nยืนยันด้วยคำสั่ง:\n/activate ${userId} trailer\nหรือ\n/activate ${userId} vip`,
+          text: `📨 สลิปชำระเงินจาก: ${userId}\n\nยืนยันสมาชิกด้วยคำสั่ง:\n/activate ${userId} trailer\nหรือ\n/activate ${userId} vip`,
         },
-        event.message,
       ],
     });
   }
@@ -503,7 +511,7 @@ function lockedMessage(feature) {
       footer: {
         type: 'box', layout: 'vertical',
         contents: [{
-          type: 'button', style: 'primary', color: '#6C63FF',
+          type: 'button', style: 'primary',
           action: { type: 'message', label: '💎 สมัครสมาชิก', text: 'สมัครสมาชิก' },
         }],
       },
