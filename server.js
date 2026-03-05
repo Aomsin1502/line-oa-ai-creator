@@ -121,13 +121,13 @@ async function handleFollow(event) {
             spacing: 'md',
             contents: [
               { type: 'text', text: 'ยินดีต้อนรับ! 🎉', weight: 'bold', size: 'lg' },
-              { type: 'text', text: 'เลือกเมนูด้านล่างเพื่อเริ่มต้น:', size: 'sm', color: '#666', wrap: true },
+              { type: 'text', text: 'เลือกเมนูด้านล่างเพื่อเริ่มต้น:', size: 'sm', color: '#666666', wrap: true },
               { type: 'separator', margin: 'md' },
               {
                 type: 'box', layout: 'vertical', spacing: 'sm', margin: 'md',
                 contents: [
                   { type: 'text', text: '🎨 สร้างรูป — สร้างรูปภาพด้วย AI', size: 'sm', wrap: true },
-                  { type: 'text', text: '🎬 สร้างวิดีโอ — ต้องสมัครสมาชิก', size: 'sm', color: '#888', wrap: true },
+                  { type: 'text', text: '🎬 สร้างวิดีโอ — ต้องสมัครสมาชิก', size: 'sm', color: '#888888', wrap: true },
                   { type: 'text', text: '💎 สมัครสมาชิก — ดูแผนราคา', size: 'sm', wrap: true },
                 ],
               },
@@ -205,7 +205,7 @@ async function handleCreateImage(event, userId) {
             contents: [
               { type: 'text', text: '🎨 สร้างรูปภาพ AI', weight: 'bold', size: 'lg' },
               { type: 'text', text: `แผน: ${planLabel(user.plan)} ✅`, size: 'sm', color: '#27AE60' },
-              { type: 'text', text: 'คลิกปุ่มด้านล่างเพื่อเริ่มสร้างรูปภาพ', size: 'sm', color: '#666', wrap: true },
+              { type: 'text', text: 'คลิกปุ่มด้านล่างเพื่อเริ่มสร้างรูปภาพ', size: 'sm', color: '#666666', wrap: true },
             ],
           },
           footer: {
@@ -248,7 +248,7 @@ async function handleCreateVideo(event, userId) {
               { type: 'text', text: '🎬 สร้างวิดีโอ AI', weight: 'bold', size: 'lg' },
               { type: 'text', text: `แผน: ${planLabel(user.plan)} ✅`, size: 'sm', color: '#27AE60' },
               { type: 'text', text: `ระยะเวลาสูงสุด: ${maxDuration} นาที`, size: 'sm', color: '#E74C3C', weight: 'bold' },
-              { type: 'text', text: 'คลิกปุ่มด้านล่างเพื่อเริ่มสร้างวิดีโอ', size: 'sm', color: '#666', wrap: true },
+              { type: 'text', text: 'คลิกปุ่มด้านล่างเพื่อเริ่มสร้างวิดีโอ', size: 'sm', color: '#666666', wrap: true },
             ],
           },
           footer: {
@@ -286,7 +286,7 @@ function trailerBubble(userId) {
     header: {
       type: 'box', layout: 'vertical', paddingAll: '20px', backgroundColor: '#27AE60',
       contents: [
-        { type: 'text', text: '🎬 Trailer', weight: 'bold', size: 'xl', color: '#fff' },
+        { type: 'text', text: '🎬 Trailer', weight: 'bold', size: 'xl', color: '#ffffff' },
         { type: 'text', text: '1 เดือน', size: 'sm', color: '#c8f5d7' },
       ],
     },
@@ -324,7 +324,7 @@ function vipBubble(userId) {
         {
           type: 'box', layout: 'horizontal',
           contents: [
-            { type: 'text', text: '⭐ VIP', weight: 'bold', size: 'xl', color: '#fff', flex: 1 },
+            { type: 'text', text: '⭐ VIP', weight: 'bold', size: 'xl', color: '#ffffff', flex: 1 },
             {
               type: 'box', layout: 'vertical', backgroundColor: '#FFD700',
               paddingAll: '4px', cornerRadius: '4px',
@@ -391,11 +391,11 @@ async function handlePostback(event) {
               contents: [
                 { type: 'text', text: '💳 ข้อมูลการชำระเงิน', weight: 'bold', size: 'lg' },
                 { type: 'separator' },
-                { type: 'box', layout: 'horizontal', margin: 'md', contents: [{ type: 'text', text: 'แผน:', size: 'sm', color: '#666', flex: 2 }, { type: 'text', text: planName, size: 'sm', weight: 'bold', flex: 3 }] },
-                { type: 'box', layout: 'horizontal', contents: [{ type: 'text', text: 'ยอดชำระ:', size: 'sm', color: '#666', flex: 2 }, { type: 'text', text: `${price} บาท`, size: 'sm', weight: 'bold', color: '#E74C3C', flex: 3 }] },
-                { type: 'box', layout: 'horizontal', contents: [{ type: 'text', text: 'วิธีชำระ:', size: 'sm', color: '#666', flex: 2 }, { type: 'text', text: 'PromptPay / QR', size: 'sm', flex: 3 }] },
+                { type: 'box', layout: 'horizontal', margin: 'md', contents: [{ type: 'text', text: 'แผน:', size: 'sm', color: '#666666', flex: 2 }, { type: 'text', text: planName, size: 'sm', weight: 'bold', flex: 3 }] },
+                { type: 'box', layout: 'horizontal', contents: [{ type: 'text', text: 'ยอดชำระ:', size: 'sm', color: '#666666', flex: 2 }, { type: 'text', text: `${price} บาท`, size: 'sm', weight: 'bold', color: '#E74C3C', flex: 3 }] },
+                { type: 'box', layout: 'horizontal', contents: [{ type: 'text', text: 'วิธีชำระ:', size: 'sm', color: '#666666', flex: 2 }, { type: 'text', text: 'PromptPay / QR', size: 'sm', flex: 3 }] },
                 { type: 'separator', margin: 'md' },
-                { type: 'text', text: '📌 สแกน QR ด้านล่างเพื่อชำระเงิน', size: 'sm', color: '#666', wrap: true, margin: 'md' },
+                { type: 'text', text: '📌 สแกน QR ด้านล่างเพื่อชำระเงิน', size: 'sm', color: '#666666', wrap: true, margin: 'md' },
                 { type: 'text', text: 'หลังชำระกรุณาส่งสลิปมาในแชทนี้', size: 'sm', color: '#E74C3C', wrap: true },
               ],
             },
@@ -463,7 +463,7 @@ async function handleAdminActivate(event, targetUserId, plan) {
             { type: 'separator' },
             { type: 'text', text: `แผน: ${planName}`, size: 'md', align: 'center', color: '#6C63FF', margin: 'md' },
             { type: 'text', text: '✅ เปิดใช้งานแล้ว', size: 'xl', align: 'center', color: '#27AE60', weight: 'bold' },
-            { type: 'text', text: 'สามารถสร้างรูปและวิดีโอได้ทันที!', size: 'sm', align: 'center', color: '#666', wrap: true },
+            { type: 'text', text: 'สามารถสร้างรูปและวิดีโอได้ทันที!', size: 'sm', align: 'center', color: '#666666', wrap: true },
           ],
         },
       },
@@ -509,7 +509,7 @@ function lockedMessage(feature) {
         contents: [
           { type: 'text', text: '🔒', size: 'xxl', align: 'center' },
           { type: 'text', text: `${feature}ถูกล็อก`, weight: 'bold', size: 'lg', align: 'center' },
-          { type: 'text', text: 'สมัครสมาชิกเพื่อปลดล็อกฟีเจอร์นี้', size: 'sm', color: '#666', align: 'center', wrap: true },
+          { type: 'text', text: 'สมัครสมาชิกเพื่อปลดล็อกฟีเจอร์นี้', size: 'sm', color: '#666666', align: 'center', wrap: true },
         ],
       },
       footer: {
