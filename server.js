@@ -256,11 +256,7 @@ async function handleTextMessage(event) {
       return handleSubscription(event, userId);
 
     default:
-      // Echo back for debug
-      return client.replyMessage({
-        replyToken: event.replyToken,
-        messages: [{ type: 'text', text: `ได้รับข้อความ: "${text}"` }],
-      });
+      return null;
   }
 }
 
@@ -269,15 +265,8 @@ async function handleTextMessage(event) {
 // ─────────────────────────────────────────────
 async function handleCreateImage(event, userId) {
   const user = db.getUser(userId);
-
-  if (!user || !user.isActive) {
-    return client.replyMessage({
-      replyToken: event.replyToken,
-      messages: [lockedMessage('สร้างรูปภาพ')],
-    });
-  }
-
-  const pageUrl = `${process.env.BASE_URL}/public/create-image.html?userId=${userId}&plan=${user.plan}`;
+  const plan = (user && user.isActive) ? user.plan : 'visitor';
+  const pageUrl = `${process.env.BASE_URL}/public/create-image.html?userId=${userId}&plan=${plan}`;
 
   return client.replyMessage({
     replyToken: event.replyToken,
@@ -291,7 +280,7 @@ async function handleCreateImage(event, userId) {
             type: 'box', layout: 'vertical', spacing: 'md',
             contents: [
               { type: 'text', text: '🎨 สร้างรูปภาพ AI', weight: 'bold', size: 'lg' },
-              { type: 'text', text: `แผน: ${planLabel(user.plan)} ✅`, size: 'sm', color: '#27AE60' },
+              { type: 'text', text: 'ฟรี! สร้างรูปภาพด้วย AI ได้เลย', size: 'sm', color: '#27AE60' },
               { type: 'text', text: 'คลิกปุ่มด้านล่างเพื่อเริ่มสร้างรูปภาพ', size: 'sm', color: '#666666', wrap: true },
             ],
           },
