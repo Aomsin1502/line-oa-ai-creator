@@ -15,6 +15,9 @@ const client = new line.messagingApi.MessagingApiClient({
 
 const app = express();
 
+// In-memory recent request log (last 20 entries)
+const recentRequests = [];
+
 // Serve public HTML pages (accessible to everyone)
 app.use('/public', express.static(path.join(__dirname, 'public')));
 
@@ -22,7 +25,7 @@ app.get('/', (req, res) => {
   res.send('🤖 AI Image And Video Creator Bot is running!');
 });
 
-// Debug endpoint — check env vars
+// Debug endpoint — check env vars + recent webhook hits
 app.get('/debug', (req, res) => {
   res.json({
     hasToken: !!process.env.LINE_CHANNEL_ACCESS_TOKEN,
@@ -33,22 +36,30 @@ app.get('/debug', (req, res) => {
     baseUrl: process.env.BASE_URL,
     adminUserId: process.env.ADMIN_USER_ID,
     nodeEnv: process.env.NODE_ENV,
+    recentRequests,
   });
 });
 
 // Line Webhook — log raw arrival first, then validate signature
 app.post('/webhook', (req, res, next) => {
-  console.log('📩 Webhook POST received');
-  console.log('  Headers:', JSON.stringify({
-    'x-line-signature': req.headers['x-line-signature'],
-    'content-type': req.headers['content-type'],
-  }));
+  const entry = {
+    time: new Date().toISOString(),
+    signature: req.headers['x-line-signature'] ? 'present' : 'missing',
+    contentType: req.headers['content-type'],
+  };
+  recentRequests.unshift(entry);
+  if (recentRequests.length > 20) recentRequests.pop();
+  console.log('📩 Webhook POST received at', entry.time);
   next();
 }, line.middleware(lineConfig), (req, res) => {
   res.sendStatus(200); // ตอบ LINE ทันที ไม่ให้ timeout
-  console.log('✅ Webhook validated, events:', req.body.events.length);
-  req.body.events.forEach((event) => {
-    console.log('  Event:', event.type, event.message?.text || event.postback?.data || '');
+  const events = req.body.events || [];
+  console.log('✅ Webhook validated, events:', events.length);
+  events.forEach((event) => {
+    const info = event.message?.text || event.postback?.data || event.type;
+    console.log('  Event:', event.type, info);
+    // Update recent request log with event info
+    if (recentRequests[0]) recentRequests[0].events = (recentRequests[0].events || []).concat(info);
     handleEvent(event).catch((err) => {
       console.error('Event error:', err?.response?.data || err.message);
     });
@@ -57,7 +68,8 @@ app.post('/webhook', (req, res, next) => {
 
 // Catch LINE middleware errors (signature validation failure etc.)
 app.use((err, req, res, next) => {
-  console.error('❌ Middleware error:', err.message);
+  console.error('❌ Middleware error on webhook:', err.message, err.status);
+  if (recentRequests[0]) recentRequests[0].error = err.message;
   res.sendStatus(200); // still return 200 to LINE
 });
 
