@@ -24,12 +24,12 @@ app.get('/', (req, res) => {
 
 // Line Webhook
 app.post('/webhook', line.middleware(lineConfig), (req, res) => {
-  Promise.all(req.body.events.map(handleEvent))
-    .then((result) => res.json(result))
-    .catch((err) => {
-      console.error(err);
-      res.status(500).end();
+  res.sendStatus(200); // ตอบ LINE ทันที ไม่ให้ timeout
+  req.body.events.forEach((event) => {
+    handleEvent(event).catch((err) => {
+      console.error('Event error:', err?.response?.data || err.message);
     });
+  });
 });
 
 // ─────────────────────────────────────────────
