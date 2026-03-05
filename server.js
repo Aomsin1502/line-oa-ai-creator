@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express = require('express');
+const crypto = require('crypto');
 const line = require('@line/bot-sdk');
 const path = require('path');
 const db = require('./db');
@@ -124,8 +125,8 @@ app.get('/debug', (req, res) => {
   });
 });
 
-// Line Webhook — log raw arrival first, then validate signature
-app.post('/webhook', (req, res, next) => {
+// Line Webhook — manual signature verification (more reliable than line.middleware)
+app.post('/webhook', express.raw({ type: '*/*' }), (req, res) => {
   const entry = {
     time: new Date().toISOString(),
     signature: req.headers['x-line-signature'] ? 'present' : 'missing',
@@ -134,31 +135,53 @@ app.post('/webhook', (req, res, next) => {
   recentRequests.unshift(entry);
   if (recentRequests.length > 20) recentRequests.pop();
   console.log('📩 Webhook POST received at', entry.time);
-  next();
-}, line.middleware(lineConfig), (req, res) => {
+
+  // Verify LINE signature manually
+  const signature = req.headers['x-line-signature'];
+  if (!signature) {
+    console.error('Missing x-line-signature header');
+    entry.error = 'missing signature';
+    return res.sendStatus(400);
+  }
+
+  const rawBody = req.body; // Buffer from express.raw()
+  const hmac = crypto.createHmac('sha256', process.env.LINE_CHANNEL_SECRET);
+  hmac.update(rawBody);
+  const expectedSig = hmac.digest('base64');
+
+  if (signature !== expectedSig) {
+    console.error('Signature mismatch — received:', signature.slice(0, 20), 'expected:', expectedSig.slice(0, 20));
+    entry.error = 'signature mismatch';
+    return res.sendStatus(400);
+  }
+
   res.sendStatus(200); // ตอบ LINE ทันที ไม่ให้ timeout
-  const events = req.body.events || [];
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rawBody.toString());
+  } catch (e) {
+    console.error('JSON parse error:', e.message);
+    return;
+  }
+
+  const events = parsed.events || [];
   console.log('✅ Webhook validated, events:', events.length);
   events.forEach((event) => {
     const info = event.message?.text || event.postback?.data || event.type;
-    console.log('  Event:', event.type, info);
-    // Update recent request log with event info
-    if (recentRequests[0]) recentRequests[0].events = (recentRequests[0].events || []).concat(info);
+    const userId = event.source?.userId;
+    console.log('  Event:', event.type, info, '| userId:', userId);
+    if (recentRequests[0]) {
+      recentRequests[0].events = (recentRequests[0].events || []).concat(info);
+      recentRequests[0].userId = userId; // log userId for identification
+    }
     handleEvent(event).catch((err) => {
       console.error('=== LINE API ERROR ===');
       console.error('message:', err.message);
       console.error('status:', err.status || err.statusCode);
       console.error('body:', JSON.stringify(err?.body || err?.response?.data || ''));
-      console.error('name:', err.name);
     });
   });
-});
-
-// Catch LINE middleware errors (signature validation failure etc.)
-app.use((err, req, res, next) => {
-  console.error('❌ Middleware error on webhook:', err.message, err.status);
-  if (recentRequests[0]) recentRequests[0].error = err.message;
-  res.sendStatus(200); // still return 200 to LINE
 });
 
 // ─────────────────────────────────────────────
