@@ -61,7 +61,11 @@ app.post('/webhook', (req, res, next) => {
     // Update recent request log with event info
     if (recentRequests[0]) recentRequests[0].events = (recentRequests[0].events || []).concat(info);
     handleEvent(event).catch((err) => {
-      console.error('Event error:', JSON.stringify(err?.response?.data) || err.message);
+      console.error('=== LINE API ERROR ===');
+      console.error('message:', err.message);
+      console.error('status:', err.status || err.statusCode);
+      console.error('body:', JSON.stringify(err?.body || err?.response?.data || ''));
+      console.error('name:', err.name);
     });
   });
 });
