@@ -30,9 +30,6 @@ app.get('/', (req, res) => {
 // ─────────────────────────────────────────────
 const ADMIN_PASS = process.env.ADMIN_PASSWORD || 'admin1234';
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
 app.get('/admin', (req, res) => {
   const users = db.getAllUsers();
   const rows = Object.values(users).map(u => `
@@ -87,7 +84,7 @@ app.get('/admin', (req, res) => {
 </body></html>`);
 });
 
-app.post('/admin/activate', async (req, res) => {
+app.post('/admin/activate', express.urlencoded({ extended: true }), async (req, res) => {
   const { pass, userId, plan } = req.body;
   if (pass !== ADMIN_PASS) {
     return res.send('<script>alert("รหัสผ่านผิด!");history.back();</script>');
