@@ -59,8 +59,16 @@ function activateUser(userId, plan) {
   return db[userId];
 }
 
+function deactivateUser(userId) {
+  const db = loadDB();
+  if (db[userId]) {
+    db[userId].isActive = false;
+    saveDB(db);
+  }
+}
+
 function getAllUsers() {
   return loadDB();
 }
 
-module.exports = { getUser, activateUser, getAllUsers };
+module.exports = { getUser, activateUser, deactivateUser, getAllUsers };

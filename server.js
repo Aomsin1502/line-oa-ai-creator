@@ -237,6 +237,13 @@ async function handleTextMessage(event) {
       return handleAdminActivate(event, parts[1], parts[2] || 'trailer');
     }
     if (text === '/users') return handleAdminListUsers(event);
+    if (text === '/quitmembers') {
+      db.deactivateUser(userId);
+      return client.replyMessage({
+        replyToken: event.replyToken,
+        messages: [{ type: 'text', text: '✅ ออกจากสมาชิกแล้ว' }],
+      });
+    }
   }
 
   switch (text) {
