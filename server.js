@@ -22,14 +22,43 @@ app.get('/', (req, res) => {
   res.send('🤖 AI Image And Video Creator Bot is running!');
 });
 
-// Line Webhook
-app.post('/webhook', line.middleware(lineConfig), (req, res) => {
+// Debug endpoint — check env vars
+app.get('/debug', (req, res) => {
+  res.json({
+    hasToken: !!process.env.LINE_CHANNEL_ACCESS_TOKEN,
+    tokenLength: (process.env.LINE_CHANNEL_ACCESS_TOKEN || '').length,
+    hasSecret: !!process.env.LINE_CHANNEL_SECRET,
+    secretLength: (process.env.LINE_CHANNEL_SECRET || '').length,
+    secretPreview: (process.env.LINE_CHANNEL_SECRET || '').slice(0, 6) + '...',
+    baseUrl: process.env.BASE_URL,
+    adminUserId: process.env.ADMIN_USER_ID,
+    nodeEnv: process.env.NODE_ENV,
+  });
+});
+
+// Line Webhook — log raw arrival first, then validate signature
+app.post('/webhook', (req, res, next) => {
+  console.log('📩 Webhook POST received');
+  console.log('  Headers:', JSON.stringify({
+    'x-line-signature': req.headers['x-line-signature'],
+    'content-type': req.headers['content-type'],
+  }));
+  next();
+}, line.middleware(lineConfig), (req, res) => {
   res.sendStatus(200); // ตอบ LINE ทันที ไม่ให้ timeout
+  console.log('✅ Webhook validated, events:', req.body.events.length);
   req.body.events.forEach((event) => {
+    console.log('  Event:', event.type, event.message?.text || event.postback?.data || '');
     handleEvent(event).catch((err) => {
       console.error('Event error:', err?.response?.data || err.message);
     });
   });
+});
+
+// Catch LINE middleware errors (signature validation failure etc.)
+app.use((err, req, res, next) => {
+  console.error('❌ Middleware error:', err.message);
+  res.sendStatus(200); // still return 200 to LINE
 });
 
 // ─────────────────────────────────────────────
