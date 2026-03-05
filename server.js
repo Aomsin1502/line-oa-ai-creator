@@ -25,6 +25,93 @@ app.get('/', (req, res) => {
   res.send('🤖 AI Image And Video Creator Bot is running!');
 });
 
+// ─────────────────────────────────────────────
+//  Admin Panel (password protected)
+// ─────────────────────────────────────────────
+const ADMIN_PASS = process.env.ADMIN_PASSWORD || 'admin1234';
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+app.get('/admin', (req, res) => {
+  const users = db.getAllUsers();
+  const rows = Object.values(users).map(u => `
+    <tr>
+      <td style="font-size:11px;word-break:break-all">${u.userId}</td>
+      <td>${u.plan}</td>
+      <td>${u.isActive ? '✅ Active' : '❌ Expired'}</td>
+      <td>${u.expiresAt ? u.expiresAt.slice(0,10) : '-'}</td>
+    </tr>`).join('') || '<tr><td colspan="4" style="text-align:center">ยังไม่มีสมาชิก</td></tr>';
+
+  res.send(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Admin Panel</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{font-family:sans-serif;max-width:800px;margin:0 auto;padding:16px;background:#f5f5f5}
+  h2{color:#6C63FF}
+  .card{background:#fff;border-radius:12px;padding:20px;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+  input,select{padding:8px;border:1px solid #ddd;border-radius:6px;width:100%;box-sizing:border-box;margin:4px 0 12px}
+  button{background:#6C63FF;color:#fff;border:none;padding:10px 24px;border-radius:6px;cursor:pointer;font-size:15px}
+  button:hover{background:#5a52e0}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:#6C63FF;color:#fff;padding:8px;text-align:left}
+  td{padding:8px;border-bottom:1px solid #eee}
+  .msg{padding:10px;border-radius:6px;margin-bottom:12px}
+  .ok{background:#d4edda;color:#155724}
+  .err{background:#f8d7da;color:#721c24}
+</style></head>
+<body>
+<h2>🤖 Admin Panel — AI Image Creator</h2>
+<div class="card">
+  <h3>เปิดใช้งานสมาชิก</h3>
+  <form method="POST" action="/admin/activate">
+    <label>รหัสผ่าน Admin</label>
+    <input type="password" name="pass" placeholder="รหัสผ่าน" required>
+    <label>LINE User ID (รับจากแจ้งเตือนสลิป)</label>
+    <input type="text" name="userId" placeholder="U36ff61ec26d76fbdbb4993ceb1d88f12" required>
+    <label>แผน</label>
+    <select name="plan">
+      <option value="trailer">🎬 Trailer — 199 บาท / 1 เดือน</option>
+      <option value="vip">⭐ VIP — 1,999 บาท / 1 ปี</option>
+    </select>
+    <button type="submit">✅ เปิดใช้งาน</button>
+  </form>
+</div>
+<div class="card">
+  <h3>สมาชิกทั้งหมด (${Object.keys(users).length} คน)</h3>
+  <table>
+    <tr><th>LINE User ID</th><th>แผน</th><th>สถานะ</th><th>หมดอายุ</th></tr>
+    ${rows}
+  </table>
+</div>
+</body></html>`);
+});
+
+app.post('/admin/activate', async (req, res) => {
+  const { pass, userId, plan } = req.body;
+  if (pass !== ADMIN_PASS) {
+    return res.send('<script>alert("รหัสผ่านผิด!");history.back();</script>');
+  }
+  if (!userId || !['trailer', 'vip'].includes(plan)) {
+    return res.send('<script>alert("ข้อมูลไม่ถูกต้อง");history.back();</script>');
+  }
+  db.activateUser(userId, plan);
+  const planName = plan === 'trailer' ? 'Trailer (1 เดือน)' : 'VIP (1 ปี)';
+  // Push notification to user
+  try {
+    await client.pushMessage({
+      to: userId,
+      messages: [{
+        type: 'text',
+        text: `🎉 ยืนยันการสมัครสมาชิกสำเร็จ!\n\nแผน: ${planName}\n✅ เปิดใช้งานแล้ว\n\nสามารถสร้างรูปและวิดีโอได้ทันที!`,
+      }],
+    });
+  } catch (e) {
+    console.error('Push error:', e.message);
+  }
+  res.send(`<script>alert("✅ เปิดใช้งาน ${planName} สำเร็จ!");location.href='/admin';</script>`);
+});
+
 // Debug endpoint — check env vars + recent webhook hits
 app.get('/debug', (req, res) => {
   res.json({

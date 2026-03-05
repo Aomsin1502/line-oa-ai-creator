@@ -1,7 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const DB_FILE = path.join(__dirname, 'users.json');
+// Use /data volume (Railway persistent storage) in production, local file otherwise
+const DB_FILE = fs.existsSync('/data')
+  ? '/data/users.json'
+  : path.join(__dirname, 'users.json');
 
 function loadDB() {
   if (!fs.existsSync(DB_FILE)) {
