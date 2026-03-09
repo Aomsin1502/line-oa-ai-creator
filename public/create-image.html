@@ -253,29 +253,35 @@
       try {
         const seed = Math.floor(Math.random() * 999999);
         const encoded = encodeURIComponent(prompt);
-        // Pollinations.ai — free, no API key needed
-        const url = `https://image.pollinations.ai/prompt/${encoded}?seed=${seed}&width=1024&height=1024&nologo=true`;
-
-        // Wait for image to load
-        await new Promise((resolve, reject) => {
-          const img = new Image();
-          img.onload = resolve;
-          img.onerror = () => reject(new Error('load_failed'));
-          img.src = url;
-          setTimeout(() => reject(new Error('timeout')), 90000);
-        });
+        // flux-schnell = fastest model (~10-20s), nologo=true, enhance=true ช่วยให้ตรงกับ prompt มากขึ้น
+        const url = `https://image.pollinations.ai/prompt/${encoded}?model=flux-schnell&seed=${seed}&width=1024&height=1024&nologo=true&enhance=true`;
 
         generatedUrl = url;
-        clearInterval(ticker);
-        document.getElementById('loading').style.display = 'none';
-        document.getElementById('resultImg').src = url;
-        document.getElementById('result').style.display = 'block';
+        const resultImg = document.getElementById('resultImg');
+
+        // แสดงรูปทันที — ไม่รอ pre-load ให้ browser จัดการ
+        await new Promise((resolve, reject) => {
+          resultImg.onload = resolve;
+          resultImg.onerror = () => reject(new Error('load_failed'));
+          resultImg.src = url;
+          // แสดง result div ก่อน เพื่อให้เห็น loading skeleton ของ img
+          clearInterval(ticker);
+          document.getElementById('loading').style.display = 'none';
+          document.getElementById('result').style.display = 'block';
+          setTimeout(() => reject(new Error('timeout')), 60000);
+        });
 
       } catch (err) {
         clearInterval(ticker);
         document.getElementById('loading').style.display = 'none';
+        document.getElementById('result').style.display = 'none';
         document.getElementById('createBtn').disabled = false;
-        showError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
+        if (err.message === 'timeout') {
+          showError('ใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้ง');
+        } else {
+          showError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
+        }
+        generatedUrl = null;
       }
     }
 
