@@ -53,7 +53,7 @@ async function uploadImage(richMenuId, imagePath) {
     `https://api-data.line.me/v2/bot/richmenu/${richMenuId}/content`,
     buf,
     {
-      headers: { ...HEADERS, 'Content-Type': 'image/png', 'Content-Length': buf.length },
+      headers: { ...HEADERS, 'Content-Type': imagePath.endsWith('.jpg') ? 'image/jpeg' : 'image/png', 'Content-Length': buf.length },
       maxBodyLength: Infinity,
     }
   );
@@ -74,12 +74,12 @@ async function main() {
 
   console.log('\n2. Creating DEFAULT menu (locked — for non-subscribers)...');
   const lockedId = await createMenu('Menu Default (Locked)');
-  const lockedOk = await uploadImage(lockedId, path.join(__dirname, 'public', 'richmenu-locked.png'));
+  const lockedOk = await uploadImage(lockedId, path.join(__dirname, 'public', 'richmenu-locked.jpg'));
   console.log(`   ID: ${lockedId}  image: ${lockedOk ? '✅' : '⚠️  missing'}`);
 
   console.log('\n3. Creating VIP menu (unlocked — for subscribers)...');
   const vipId = await createMenu('Menu VIP (Unlocked)');
-  const vipOk = await uploadImage(vipId, path.join(__dirname, 'public', 'richmenu-vip.png'));
+  const vipOk = await uploadImage(vipId, path.join(__dirname, 'public', 'richmenu-vip.jpg'));
   console.log(`   ID: ${vipId}  image: ${vipOk ? '✅' : '⚠️  missing'}`);
 
   console.log('\n4. Setting DEFAULT menu as global default...');
