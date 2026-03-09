@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const crypto = require('crypto');
+const axios = require('axios');
 const line = require('@line/bot-sdk');
 const path = require('path');
 const db = require('./db');
@@ -13,6 +14,35 @@ const lineConfig = {
 const client = new line.messagingApi.MessagingApiClient({
   channelAccessToken: lineConfig.channelAccessToken,
 });
+
+// ─────────────────────────────────────────────
+//  Rich Menu helpers
+// ─────────────────────────────────────────────
+async function setRichMenu(userId, menuId) {
+  if (!menuId) return;
+  try {
+    await axios.post(
+      `https://api.line.me/v2/bot/user/${userId}/richmenu/${menuId}`,
+      {},
+      { headers: { Authorization: `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}` } }
+    );
+    console.log(`🎛  Rich menu set for ${userId}: ${menuId}`);
+  } catch (e) {
+    console.error('Rich menu set error:', e.response?.data || e.message);
+  }
+}
+
+async function resetRichMenu(userId) {
+  try {
+    await axios.delete(
+      `https://api.line.me/v2/bot/user/${userId}/richmenu`,
+      { headers: { Authorization: `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}` } }
+    );
+    console.log(`🎛  Rich menu reset for ${userId} (back to default)`);
+  } catch (e) {
+    console.error('Rich menu reset error:', e.response?.data || e.message);
+  }
+}
 
 const app = express();
 
@@ -94,6 +124,7 @@ app.post('/admin/activate', express.urlencoded({ extended: true }), async (req, 
     return res.send('<script>alert("ข้อมูลไม่ถูกต้อง");history.back();</script>');
   }
   db.activateUser(userId, plan);
+  await setRichMenu(userId, process.env.RICH_MENU_VIP_ID); // สลับเป็น VIP menu
   const planName = plan === 'trailer' ? 'Trailer (1 เดือน)' : 'VIP (1 ปี)';
   // Push notification to user
   try {
@@ -262,6 +293,7 @@ async function handleTextMessage(event) {
     if (text === '/users') return handleAdminListUsers(event);
     if (text === '/quitmembers') {
       db.deactivateUser(userId);
+      await resetRichMenu(userId); // สลับกลับ default (locked) menu
       return client.replyMessage({
         replyToken: event.replyToken,
         messages: [{ type: 'text', text: '✅ ออกจากสมาชิกแล้ว' }],
@@ -549,6 +581,7 @@ async function handleAdminActivate(event, targetUserId, plan) {
   }
 
   db.activateUser(targetUserId, plan);
+  await setRichMenu(targetUserId, process.env.RICH_MENU_VIP_ID); // สลับเป็น VIP menu
   const planName = planLabel(plan);
 
   await client.pushMessage({
