@@ -63,6 +63,28 @@ app.get('/', (req, res) => {
 });
 
 // ─────────────────────────────────────────────
+//  Network diagnostic (temporary)
+// ─────────────────────────────────────────────
+app.get('/api/test-network', async (req, res) => {
+  const results = {};
+  const testUrl = 'https://image.pollinations.ai/prompt/cat?model=flux-schnell&width=64&height=64&nologo=true&seed=1';
+  try {
+    const r = await axios.get(testUrl, { responseType: 'arraybuffer', timeout: 30000 });
+    const ct = r.headers['content-type'] || '';
+    results.pollinations = { ok: true, status: r.status, ct, bytes: r.data?.byteLength };
+  } catch (e) {
+    results.pollinations = { ok: false, code: e.code, message: e.message, status: e.response?.status };
+  }
+  try {
+    const r2 = await axios.get('https://httpbin.org/get', { timeout: 10000 });
+    results.httpbin = { ok: true, status: r2.status };
+  } catch (e2) {
+    results.httpbin = { ok: false, code: e2.code, message: e2.message };
+  }
+  res.json(results);
+});
+
+// ─────────────────────────────────────────────
 //  Image generation proxy (server-side → avoids CORS + fallback)
 // ─────────────────────────────────────────────
 app.get('/api/generate-image', async (req, res) => {
