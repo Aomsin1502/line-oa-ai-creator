@@ -366,7 +366,7 @@ async function handleCreateVideo(event, userId) {
   if (!user || !user.isActive) {
     return client.replyMessage({
       replyToken: event.replyToken,
-      messages: [lockedMessage('สร้างวิดีโอ')],
+      messages: [lockedMessage()],
     });
   }
 
@@ -476,32 +476,28 @@ async function handlePostback(event) {
   const userId = event.source.userId;
 
   if (action === 'pay') {
-    const price = plan === 'trailer' ? '199' : '1,999';
     const planName = plan === 'trailer' ? 'Trailer (1 เดือน)' : 'VIP (1 ปี)';
     const qrUrl = plan === 'trailer'
       ? `${process.env.BASE_URL}/public/qr-trailer.png`
       : `${process.env.BASE_URL}/public/qr-vip.png`;
+    const buyImgUrl = plan === 'trailer'
+      ? `${process.env.BASE_URL}/public/richmessage-buy-trailer.jpg`
+      : `${process.env.BASE_URL}/public/richmessage-buy-vip.jpg`;
 
     return client.replyMessage({
       replyToken: event.replyToken,
       messages: [
         {
           type: 'flex',
-          altText: `ชำระเงิน ${planName}`,
+          altText: `ข้อมูลการชำระเงิน ${planName}`,
           contents: {
             type: 'bubble',
-            body: {
-              type: 'box', layout: 'vertical', spacing: 'md',
-              contents: [
-                { type: 'text', text: '💳 ข้อมูลการชำระเงิน', weight: 'bold', size: 'lg' },
-                { type: 'separator' },
-                { type: 'box', layout: 'horizontal', margin: 'md', contents: [{ type: 'text', text: 'แผน:', size: 'sm', color: '#666666', flex: 2 }, { type: 'text', text: planName, size: 'sm', weight: 'bold', flex: 3 }] },
-                { type: 'box', layout: 'horizontal', contents: [{ type: 'text', text: 'ยอดชำระ:', size: 'sm', color: '#666666', flex: 2 }, { type: 'text', text: `${price} บาท`, size: 'sm', weight: 'bold', color: '#E74C3C', flex: 3 }] },
-                { type: 'box', layout: 'horizontal', contents: [{ type: 'text', text: 'วิธีชำระ:', size: 'sm', color: '#666666', flex: 2 }, { type: 'text', text: 'PromptPay / QR', size: 'sm', flex: 3 }] },
-                { type: 'separator', margin: 'md' },
-                { type: 'text', text: '📌 สแกน QR ด้านล่างเพื่อชำระเงิน', size: 'sm', color: '#666666', wrap: true, margin: 'md' },
-                { type: 'text', text: 'หลังชำระกรุณาส่งสลิปมาในแชทนี้', size: 'sm', color: '#E74C3C', wrap: true },
-              ],
+            hero: {
+              type: 'image',
+              url: buyImgUrl,
+              size: 'full',
+              aspectRatio: '4:3',
+              aspectMode: 'cover',
             },
           },
         },
@@ -603,22 +599,23 @@ function planLabel(plan) {
   return plan === 'vip' ? '⭐ VIP (1 ปี)' : '🎬 Trailer (1 เดือน)';
 }
 
-function lockedMessage(feature) {
+function lockedMessage() {
+  const imgUrl = `${process.env.BASE_URL}/public/richmessage-locked.jpg`;
   return {
     type: 'flex',
-    altText: `${feature}ถูกล็อก — กรุณาสมัครสมาชิก`,
+    altText: 'สร้างวิดีโอถูกล็อก — กรุณาสมัครสมาชิก',
     contents: {
       type: 'bubble',
-      body: {
-        type: 'box', layout: 'vertical', spacing: 'md',
-        contents: [
-          { type: 'text', text: '🔒', size: 'xxl', align: 'center' },
-          { type: 'text', text: `${feature}ถูกล็อก`, weight: 'bold', size: 'lg', align: 'center' },
-          { type: 'text', text: 'สมัครสมาชิกเพื่อปลดล็อกฟีเจอร์นี้', size: 'sm', color: '#666666', align: 'center', wrap: true },
-        ],
+      hero: {
+        type: 'image',
+        url: imgUrl,
+        size: 'full',
+        aspectRatio: '3:2',
+        aspectMode: 'cover',
+        action: { type: 'message', text: 'สมัครสมาชิก' },
       },
       footer: {
-        type: 'box', layout: 'vertical',
+        type: 'box', layout: 'vertical', spacing: 'none', paddingAll: '12px',
         contents: [{
           type: 'button', style: 'primary',
           action: { type: 'message', label: '💎 สมัครสมาชิก', text: 'สมัครสมาชิก' },
