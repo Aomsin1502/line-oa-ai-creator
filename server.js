@@ -96,17 +96,39 @@ const BROWSER_HEADERS = {
   'Referer': 'https://pollinations.ai/',
 };
 
+// ── Translate to English via Google Translate (unofficial, no key) ──
+async function translateToEnglish(text) {
+  // Skip if already mostly ASCII (likely already English)
+  const thaiChars = (text.match(/[\u0E00-\u0E7F]/g) || []).length;
+  if (thaiChars === 0) return text;
+  try {
+    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encodeURIComponent(text)}`;
+    const r = await axios.get(url, { timeout: 8000 });
+    const translated = r.data?.[0]?.map(s => s?.[0]).filter(Boolean).join('') || text;
+    console.log(`🌐 Translated: "${text.slice(0,40)}" → "${translated.slice(0,60)}"`);
+    return translated;
+  } catch (e) {
+    console.log(`⚠️ Translate failed: ${e.message}, using original`);
+    return text;
+  }
+}
+
 // ── Stable Horde: free distributed SD network ──────────────────
 async function generateWithStableHorde(prompt) {
   const HORDE_KEY = process.env.STABLE_HORDE_KEY || '0000000000';
   const headers = { 'Content-Type': 'application/json', 'apikey': HORDE_KEY };
 
+  // Prepend quality booster tags
+  const enhancedPrompt = `${prompt}, highly detailed, sharp focus, professional photography, 8k`;
+
   // Submit job
   const sub = await axios.post('https://stablehorde.net/api/v2/generate/async', {
-    prompt,
-    params: { width: 512, height: 512, steps: 20, n: 1, sampler_name: 'k_euler' },
+    prompt: enhancedPrompt,
+    params: { width: 512, height: 512, steps: 25, n: 1, sampler_name: 'k_dpmpp_2m',
+              cfg_scale: 7, karras: true },
     nsfw: false, censor_nsfw: true,
-    models: ['stable_diffusion'],
+    models: ['AlbedoBase XL (SDXL)', 'SDXL 1.0', 'stable_diffusion_xl'],
+    r2: true,
   }, { headers, timeout: 15000 });
 
   const jobId = sub.data.id;
@@ -162,7 +184,7 @@ app.get('/api/generate-image', async (req, res) => {
   if (!prompt) return res.status(400).json({ error: 'prompt required' });
 
   const seed = Math.floor(Math.random() * 999999);
-  const fullPrompt = prompt;
+  const fullPrompt = await translateToEnglish(prompt);
 
   // ── 1. HuggingFace (if token set) ──────────────
   if (process.env.HUGGINGFACE_TOKEN) {
@@ -224,7 +246,7 @@ app.get('/api/generate-video', async (req, res) => {
   const secPerClip = durationSec / numImages;
   const FPS = 25;
   const seed = Math.floor(Math.random() * 999999);
-  const fullPrompt = decodeURIComponent(prompt);
+  const fullPrompt = await translateToEnglish(decodeURIComponent(prompt));
   console.log(`🎬 ${numImages} images × ${secPerClip.toFixed(1)}s each = ${durationSec}s video`);
 
   // ── Generate images (same fallback chain as image proxy) ──
