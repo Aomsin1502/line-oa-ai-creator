@@ -63,58 +63,103 @@ app.get('/', (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-//  Network diagnostic (temporary)
+//  Network diagnostic
 // ─────────────────────────────────────────────
 app.get('/api/test-network', async (req, res) => {
   const results = {};
-  const testUrl = 'https://image.pollinations.ai/prompt/cat?model=flux-schnell&width=64&height=64&nologo=true&seed=1';
-  try {
-    const r = await axios.get(testUrl, { responseType: 'arraybuffer', timeout: 30000 });
-    const ct = r.headers['content-type'] || '';
-    results.pollinations = { ok: true, status: r.status, ct, bytes: r.data?.byteLength };
-  } catch (e) {
-    results.pollinations = { ok: false, code: e.code, message: e.message, status: e.response?.status };
-  }
-  try {
-    const r2 = await axios.get('https://httpbin.org/get', { timeout: 10000 });
-    results.httpbin = { ok: true, status: r2.status };
-  } catch (e2) {
-    results.httpbin = { ok: false, code: e2.code, message: e2.message };
+  const BH = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+    'Referer': 'https://pollinations.ai/',
+  };
+  const base = 'https://image.pollinations.ai/prompt/cat?width=64&height=64&nologo=true&seed=';
+  for (const [label, opts] of [
+    ['plain', { responseType: 'arraybuffer', timeout: 30000 }],
+    ['withHeaders', { responseType: 'arraybuffer', timeout: 30000, headers: BH }],
+  ]) {
+    try {
+      const r = await axios.get(base + (label === 'plain' ? '1' : '2'), opts);
+      const ct = r.headers['content-type'] || '';
+      results[label] = { ok: true, status: r.status, ct, bytes: r.data?.byteLength };
+    } catch (e) {
+      results[label] = { ok: false, status: e.response?.status, msg: e.message.slice(0, 100) };
+    }
   }
   res.json(results);
 });
 
+// Browser-like headers to prevent cloud-IP blocks
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+  'Accept-Language': 'th,en;q=0.9',
+  'Referer': 'https://pollinations.ai/',
+};
+
 // ─────────────────────────────────────────────
-//  Image generation proxy (server-side → avoids CORS + fallback)
+//  Image generation proxy
 // ─────────────────────────────────────────────
 app.get('/api/generate-image', async (req, res) => {
   const { prompt } = req.query;
   if (!prompt) return res.status(400).json({ error: 'prompt required' });
 
   const seed = Math.floor(Math.random() * 999999);
-  const fullPrompt = decodeURIComponent(prompt);
+  const fullPrompt = prompt; // Express already decodes query params
 
+  // ── 1. Pollinations with browser headers ──────
   const models = ['flux-schnell', 'flux', 'turbo'];
   for (const model of models) {
     try {
       const encoded = encodeURIComponent(fullPrompt);
       const url = `https://image.pollinations.ai/prompt/${encoded}?model=${model}&seed=${seed}&width=1024&height=1024&nologo=true`;
-      console.log(`🎨 Trying Pollinations image (${model})...`);
-
-      const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 120000 });
+      console.log(`🎨 Pollinations (${model})...`);
+      const resp = await axios.get(url, {
+        responseType: 'arraybuffer', timeout: 120000, headers: BROWSER_HEADERS,
+      });
       const ct = resp.headers['content-type'] || '';
-
       if (ct.includes('image') && resp.data?.byteLength > 500) {
-        console.log(`✅ Image success (${model}):`, ct, resp.data.byteLength, 'bytes');
+        console.log(`✅ Pollinations OK (${model}): ${resp.data.byteLength}b`);
         res.set('Content-Type', ct);
         res.set('Cache-Control', 'no-store');
         return res.send(Buffer.from(resp.data));
       }
-      console.log(`⚠️ Model ${model} returned non-image:`, ct);
-    } catch (e) {
-      console.log(`⚠️ Model ${model} failed:`, e.message);
-    }
+    } catch (e) { console.log(`⚠️ Pollinations (${model}): ${e.message}`); }
   }
+
+  // ── 2. Craiyon fallback ────────────────────────
+  try {
+    console.log('🖼 Trying Craiyon...');
+    const cr = await axios.post('https://api.craiyon.com/v3', {
+      prompt: fullPrompt, negative_prompt: '', model: 'photo', token: null, version: 'c4ue22fb7kb6wlac',
+    }, { timeout: 120000 });
+    const images = cr.data?.images;
+    if (Array.isArray(images) && images.length > 0) {
+      const buf = Buffer.from(images[0], 'base64');
+      if (buf.length > 500) {
+        console.log(`✅ Craiyon OK: ${buf.length}b`);
+        res.set('Content-Type', 'image/jpeg');
+        res.set('Cache-Control', 'no-store');
+        return res.send(buf);
+      }
+    }
+  } catch (e) { console.log(`⚠️ Craiyon: ${e.message}`); }
+
+  // ── 3. HuggingFace SD fallback ─────────────────
+  try {
+    console.log('🤗 Trying HuggingFace SD...');
+    const hf = await axios.post(
+      'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1',
+      { inputs: fullPrompt },
+      { responseType: 'arraybuffer', timeout: 60000, headers: { 'Content-Type': 'application/json', 'X-Wait-For-Model': 'true' } }
+    );
+    const ct = hf.headers['content-type'] || '';
+    if (ct.includes('image') && hf.data?.byteLength > 500) {
+      console.log(`✅ HuggingFace OK: ${hf.data.byteLength}b`);
+      res.set('Content-Type', ct);
+      res.set('Cache-Control', 'no-store');
+      return res.send(Buffer.from(hf.data));
+    }
+  } catch (e) { console.log(`⚠️ HuggingFace: ${e.message}`); }
 
   return res.status(500).json({ error: 'ไม่สามารถสร้างรูปภาพได้ กรุณาลองใหม่อีกครั้ง' });
 });
@@ -144,7 +189,7 @@ app.get('/api/generate-video', async (req, res) => {
     const scenePrompt = i === 0 ? fullPrompt : `${fullPrompt}, scene ${i + 1}`;
     const encoded = encodeURIComponent(scenePrompt + ', cinematic, high quality, 4k');
     const url = `https://image.pollinations.ai/prompt/${encoded}?model=flux-schnell&seed=${seed + i * 137}&width=1280&height=720&nologo=true`;
-    return axios.get(url, { responseType: 'arraybuffer', timeout: 110000 })
+    return axios.get(url, { responseType: 'arraybuffer', timeout: 110000, headers: BROWSER_HEADERS })
       .then(r => {
         const ct = r.headers['content-type'] || '';
         if (ct.includes('image') && r.data?.byteLength > 500) {
