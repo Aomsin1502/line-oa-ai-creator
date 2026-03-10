@@ -219,22 +219,20 @@ app.get('/api/generate-video', async (req, res) => {
 
   const maxSec = user.plan === 'vip' ? 60 : 30;
   const durationSec = Math.min(Math.max(parseInt(duration || 15), 10), maxSec);
-  const numImages = Math.min(Math.max(Math.ceil(durationSec / 5), 3), 10);
-  const secPerFrame = durationSec / numImages;
+  // 5 seconds per image clip (Ken Burns); max 8 images to cap generation time
+  const numImages = Math.min(Math.max(Math.ceil(durationSec / 5), 2), 8);
+  const secPerClip = durationSec / numImages;
+  const FPS = 25;
   const seed = Math.floor(Math.random() * 999999);
   const fullPrompt = decodeURIComponent(prompt);
-  console.log(`🎬 Generating ${numImages} images for ${durationSec}s video (${secPerFrame.toFixed(1)}s/frame)...`);
+  console.log(`🎬 ${numImages} images × ${secPerClip.toFixed(1)}s each = ${durationSec}s video`);
 
-  // ── Generate images (using same fallback chain as image proxy) ──
+  // ── Generate images (same fallback chain as image proxy) ──
   async function getOneImage(scenePrompt, imgSeed) {
-    // Try HuggingFace first if token available
     if (process.env.HUGGINGFACE_TOKEN) {
-      try {
-        const { buffer } = await generateWithHuggingFace(scenePrompt);
-        return buffer;
-      } catch (e) { console.log(`⚠️ HF img: ${e.message}`); }
+      try { const { buffer } = await generateWithHuggingFace(scenePrompt); return buffer; }
+      catch (e) { console.log(`⚠️ HF img: ${e.message}`); }
     }
-    // Try Pollinations
     const encoded = encodeURIComponent(scenePrompt + ', cinematic, 4k');
     const url = `https://image.pollinations.ai/prompt/${encoded}?model=flux-schnell&seed=${imgSeed}&width=1280&height=720&nologo=true`;
     try {
@@ -242,16 +240,15 @@ app.get('/api/generate-video', async (req, res) => {
       const ct = r.headers['content-type'] || '';
       if (ct.includes('image') && r.data?.byteLength > 500) return Buffer.from(r.data);
     } catch (e) { console.log(`⚠️ Poll img: ${e.message}`); }
-    // Stable Horde fallback
     return generateWithStableHorde(scenePrompt);
   }
 
-  // Generate images in parallel
+  // Generate all images in parallel
   const imagePromises = Array.from({ length: numImages }, (_, i) => {
     const scenePrompt = i === 0 ? fullPrompt : `${fullPrompt}, scene ${i + 1}`;
     return getOneImage(scenePrompt, seed + i * 137)
       .then(buf => { console.log(`✅ Image ${i + 1}/${numImages} OK`); return buf; })
-      .catch(e => { console.log(`⚠️ Image ${i + 1} all failed: ${e.message}`); return null; });
+      .catch(e => { console.log(`⚠️ Image ${i + 1} failed: ${e.message}`); return null; });
   });
 
   const imageBuffers = (await Promise.all(imagePromises)).filter(Boolean);
@@ -261,40 +258,66 @@ app.get('/api/generate-video', async (req, res) => {
     return res.status(500).json({ error: 'ไม่สามารถสร้างรูปภาพได้ กรุณาลองใหม่อีกครั้ง' });
   }
 
-  // ── Build MP4 with ffmpeg ───────────────────────
+  // ── Build MP4: Ken Burns (zoompan) per clip → concat ──
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aivideo-'));
   const outputPath = path.join(tmpDir, 'output.mp4');
 
   try {
-    // Save images to temp files
-    const imagePaths = imageBuffers.map((buf, i) => {
-      const p = path.join(tmpDir, `frame${String(i).padStart(3, '0')}.jpg`);
-      fs.writeFileSync(p, buf);
-      return p;
-    });
+    const actualSecPerClip = durationSec / imageBuffers.length;
+    const numFrames = Math.round(actualSecPerClip * FPS);
+    const clipPaths = [];
 
-    const actualSecPerFrame = durationSec / imageBuffers.length;
+    for (let i = 0; i < imageBuffers.length; i++) {
+      const imgPath = path.join(tmpDir, `img_${i}.jpg`);
+      fs.writeFileSync(imgPath, imageBuffers[i]);
 
-    // Build concat list
-    const concatLines = imagePaths
-      .map(p => `file '${p.replace(/\\/g, '/')}'\nduration ${actualSecPerFrame.toFixed(3)}`)
-      .join('\n');
-    // ffmpeg concat needs last file repeated without duration
-    const concatContent = concatLines + `\nfile '${imagePaths[imagePaths.length - 1].replace(/\\/g, '/')}'`;
+      const clipPath = path.join(tmpDir, `clip_${i}.mp4`);
+
+      // Ken Burns: even clips zoom in, odd clips zoom out
+      const zExpr = i % 2 === 0
+        ? `min(zoom+0.0012,1.2)`               // zoom in  1.0 → 1.2
+        : `if(eq(on,1),1.2,max(zoom-0.0012,1.0))`; // zoom out 1.2 → 1.0
+
+      const zFilter = [
+        `scale=8000:-1`,  // upscale so zoompan has room to pan
+        `zoompan=z='${zExpr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'`,
+        `:d=${numFrames}:s=1280x720:fps=${FPS}`,
+        `,format=yuv420p`,
+      ].join('');
+
+      console.log(`🎞  Clip ${i + 1}: zoompan ${numFrames} frames (${actualSecPerClip.toFixed(1)}s)`);
+      await new Promise((resolve, reject) => {
+        ffmpeg()
+          .input(imgPath).inputOptions(['-loop 1'])
+          .videoFilter(zFilter)
+          .outputOptions([
+            `-c:v libx264`, `-preset veryfast`, `-crf 23`,
+            `-t ${actualSecPerClip.toFixed(3)}`, `-an`,
+          ])
+          .output(clipPath)
+          .on('end', resolve)
+          .on('error', (e, _stdout, stderr) => {
+            console.error(`❌ zoompan clip ${i} error:`, e.message, stderr?.slice(-300));
+            reject(e);
+          })
+          .run();
+      });
+      clipPaths.push(clipPath);
+    }
+
+    // Concat all clips
+    const concatContent = clipPaths.map(p => `file '${p.replace(/\\/g, '/')}'`).join('\n');
     const concatFile = path.join(tmpDir, 'concat.txt');
     fs.writeFileSync(concatFile, concatContent);
 
     await new Promise((resolve, reject) => {
       ffmpeg()
-        .addInput(concatFile)
-        .inputOptions(['-f concat', '-safe 0'])
-        .videoFilter('scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black')
-        .outputOptions(['-c:v libx264', '-pix_fmt yuv420p', '-movflags faststart', '-r 24'])
+        .addInput(concatFile).inputOptions(['-f concat', '-safe 0'])
+        .outputOptions(['-c copy', '-movflags faststart'])
         .output(outputPath)
-        .on('end', () => { console.log('✅ ffmpeg done'); resolve(); })
-        .on('error', (e, stdout, stderr) => {
-          console.error('❌ ffmpeg error:', e.message);
-          console.error('stderr:', stderr);
+        .on('end', () => { console.log('✅ ffmpeg concat done'); resolve(); })
+        .on('error', (e, _stdout, stderr) => {
+          console.error('❌ ffmpeg concat error:', e.message, stderr?.slice(-300));
           reject(e);
         })
         .run();
