@@ -4,7 +4,13 @@ const crypto = require('crypto');
 const axios = require('axios');
 const line = require('@line/bot-sdk');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegPath = require('ffmpeg-static');
 const db = require('./db');
+
+ffmpeg.setFfmpegPath(ffmpegPath);
 
 const lineConfig = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
@@ -92,68 +98,101 @@ app.get('/api/generate-image', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────
-//  Video generation proxy (server-side → avoids CORS + fallback)
+//  Video generation — images → MP4 via ffmpeg
 // ─────────────────────────────────────────────
 app.get('/api/generate-video', async (req, res) => {
-  const { prompt, userId } = req.query;
+  const { prompt, userId, duration } = req.query;
   if (!prompt) return res.status(400).json({ error: 'prompt required' });
 
-  // ตรวจว่าเป็นสมาชิกจริง
   const user = db.getUser(userId);
   if (!user || !user.isActive) {
     return res.status(403).json({ error: 'กรุณาสมัครสมาชิกก่อนสร้างวิดีโอ' });
   }
 
+  const maxSec = user.plan === 'vip' ? 60 : 30;
+  const durationSec = Math.min(Math.max(parseInt(duration || 15), 10), maxSec);
+  const numImages = Math.min(Math.max(Math.ceil(durationSec / 5), 3), 10);
+  const secPerFrame = durationSec / numImages;
   const seed = Math.floor(Math.random() * 999999);
-  const fullPrompt = decodeURIComponent(prompt) + ', cinematic, high quality';
+  const fullPrompt = decodeURIComponent(prompt);
+  console.log(`🎬 Generating ${numImages} images for ${durationSec}s video (${secPerFrame.toFixed(1)}s/frame)...`);
 
-  // ── ลอง Pollinations video API ──────────────────
-  try {
-    const encoded = encodeURIComponent(fullPrompt);
-    const url = `https://video.pollinations.ai/prompt/${encoded}?seed=${seed}&width=1280&height=720&nologo=true`;
-    console.log('🎬 Trying Pollinations video...');
+  // ── Generate images in parallel ────────────────
+  const imagePromises = Array.from({ length: numImages }, (_, i) => {
+    const scenePrompt = i === 0 ? fullPrompt : `${fullPrompt}, scene ${i + 1}`;
+    const encoded = encodeURIComponent(scenePrompt + ', cinematic, high quality, 4k');
+    const url = `https://image.pollinations.ai/prompt/${encoded}?model=flux-schnell&seed=${seed + i * 137}&width=1280&height=720&nologo=true`;
+    return axios.get(url, { responseType: 'arraybuffer', timeout: 110000 })
+      .then(r => {
+        const ct = r.headers['content-type'] || '';
+        if (ct.includes('image') && r.data?.byteLength > 500) {
+          console.log(`✅ Image ${i + 1}/${numImages} OK (${r.data.byteLength} bytes)`);
+          return Buffer.from(r.data);
+        }
+        return null;
+      })
+      .catch(e => { console.log(`⚠️ Image ${i + 1} failed: ${e.message}`); return null; });
+  });
 
-    const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 300000 });
-    const ct = resp.headers['content-type'] || '';
-    console.log('Pollinations response:', ct, resp.data?.byteLength, 'bytes');
+  const imageBuffers = (await Promise.all(imagePromises)).filter(Boolean);
+  console.log(`📦 Got ${imageBuffers.length}/${numImages} images`);
 
-    if (ct.includes('video') || ct.includes('octet-stream')) {
-      res.set('Content-Type', 'video/mp4');
-      return res.send(Buffer.from(resp.data));
-    }
-    const preview = Buffer.from(resp.data).slice(0, 300).toString('utf8');
-    console.log('Pollinations non-video preview:', preview);
-    throw new Error('Not a video: ' + ct);
-  } catch (e1) {
-    console.log('⚠️ Pollinations failed:', e1.message);
+  if (imageBuffers.length === 0) {
+    return res.status(500).json({ error: 'ไม่สามารถสร้างรูปภาพได้ กรุณาลองใหม่อีกครั้ง' });
   }
 
-  // ── Fallback: Hugging Face text-to-video ────────
+  // ── Build MP4 with ffmpeg ───────────────────────
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aivideo-'));
+  const outputPath = path.join(tmpDir, 'output.mp4');
+
   try {
-    console.log('🤗 Trying HuggingFace text-to-video...');
-    const resp = await axios.post(
-      'https://api-inference.huggingface.co/models/damo-vilab/text-to-video-ms-1.7b',
-      { inputs: fullPrompt },
-      {
-        responseType: 'arraybuffer',
-        timeout: 120000,
-        headers: { 'Content-Type': 'application/json', 'X-Wait-For-Model': 'true' },
-      }
-    );
-    const ct = resp.headers['content-type'] || '';
-    console.log('HuggingFace response:', ct, resp.data?.byteLength, 'bytes');
+    // Save images to temp files
+    const imagePaths = imageBuffers.map((buf, i) => {
+      const p = path.join(tmpDir, `frame${String(i).padStart(3, '0')}.jpg`);
+      fs.writeFileSync(p, buf);
+      return p;
+    });
 
-    if (ct.includes('video') || ct.includes('octet-stream')) {
-      console.log('✅ HuggingFace video success');
-      res.set('Content-Type', 'video/mp4');
-      return res.send(Buffer.from(resp.data));
-    }
-    throw new Error('HF not a video: ' + ct);
-  } catch (e2) {
-    console.error('❌ HuggingFace failed:', e2.message);
+    const actualSecPerFrame = durationSec / imageBuffers.length;
+
+    // Build concat list
+    const concatLines = imagePaths
+      .map(p => `file '${p.replace(/\\/g, '/')}'\nduration ${actualSecPerFrame.toFixed(3)}`)
+      .join('\n');
+    // ffmpeg concat needs last file repeated without duration
+    const concatContent = concatLines + `\nfile '${imagePaths[imagePaths.length - 1].replace(/\\/g, '/')}'`;
+    const concatFile = path.join(tmpDir, 'concat.txt');
+    fs.writeFileSync(concatFile, concatContent);
+
+    await new Promise((resolve, reject) => {
+      ffmpeg()
+        .addInput(concatFile)
+        .inputOptions(['-f concat', '-safe 0'])
+        .videoFilter('scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2:black')
+        .outputOptions(['-c:v libx264', '-pix_fmt yuv420p', '-movflags faststart', '-r 24'])
+        .output(outputPath)
+        .on('end', () => { console.log('✅ ffmpeg done'); resolve(); })
+        .on('error', (e, stdout, stderr) => {
+          console.error('❌ ffmpeg error:', e.message);
+          console.error('stderr:', stderr);
+          reject(e);
+        })
+        .run();
+    });
+
+    const videoBuffer = fs.readFileSync(outputPath);
+    console.log(`📹 MP4 ready: ${videoBuffer.length} bytes`);
+
+    res.set('Content-Type', 'video/mp4');
+    res.set('Cache-Control', 'no-store');
+    res.send(videoBuffer);
+
+  } catch (err) {
+    console.error('❌ Video creation error:', err.message);
+    res.status(500).json({ error: 'ไม่สามารถสร้างวิดีโอได้ กรุณาลองใหม่อีกครั้ง' });
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
-
-  return res.status(500).json({ error: 'ไม่สามารถสร้างวิดีโอได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง' });
 });
 
 // ─────────────────────────────────────────────
@@ -470,7 +509,7 @@ async function handleCreateVideo(event, userId) {
     });
   }
 
-  const maxDuration = user.plan === 'vip' ? 20 : 5;
+  const maxDuration = user.plan === 'vip' ? 60 : 30; // seconds
   const pageUrl = `${process.env.BASE_URL}/public/create-video.html?userId=${userId}&plan=${user.plan}&maxDuration=${maxDuration}`;
   const imgUrl = user.plan === 'vip'
     ? `${process.env.BASE_URL}/public/richmessage-video-vip.jpg`
