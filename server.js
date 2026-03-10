@@ -88,13 +88,66 @@ app.get('/api/test-network', async (req, res) => {
   res.json(results);
 });
 
-// Browser-like headers to prevent cloud-IP blocks
+// Browser-like headers for Pollinations
 const BROWSER_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
   'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
   'Accept-Language': 'th,en;q=0.9',
   'Referer': 'https://pollinations.ai/',
 };
+
+// ── Stable Horde: free distributed SD network ──────────────────
+async function generateWithStableHorde(prompt) {
+  const HORDE_KEY = process.env.STABLE_HORDE_KEY || '0000000000';
+  const headers = { 'Content-Type': 'application/json', 'apikey': HORDE_KEY };
+
+  // Submit job
+  const sub = await axios.post('https://stablehorde.net/api/v2/generate/async', {
+    prompt,
+    params: { width: 512, height: 512, steps: 20, n: 1, sampler_name: 'k_euler' },
+    nsfw: false, censor_nsfw: true,
+    models: ['stable_diffusion'],
+  }, { headers, timeout: 15000 });
+
+  const jobId = sub.data.id;
+  if (!jobId) throw new Error('No job ID from Stable Horde');
+  console.log(`🐴 Stable Horde job: ${jobId}`);
+
+  // Poll until done (max 4 min)
+  const deadline = Date.now() + 240000;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 6000));
+    const check = await axios.get(`https://stablehorde.net/api/v2/generate/check/${jobId}`,
+      { headers, timeout: 10000 });
+    console.log(`🐴 Horde status: done=${check.data.done} wait=${check.data.wait_time}s`);
+    if (check.data.faulted) throw new Error('Stable Horde job faulted');
+    if (check.data.done) break;
+  }
+
+  // Retrieve image
+  const result = await axios.get(`https://stablehorde.net/api/v2/generate/status/${jobId}`,
+    { headers, timeout: 15000 });
+  const gen = result.data?.generations?.[0];
+  if (!gen || gen.state !== 'ok') throw new Error('No result from Stable Horde');
+  return Buffer.from(gen.img, 'base64');
+}
+
+// ── HuggingFace (requires HUGGINGFACE_TOKEN env var) ────────────
+async function generateWithHuggingFace(prompt) {
+  const token = process.env.HUGGINGFACE_TOKEN;
+  if (!token) throw new Error('No HUGGINGFACE_TOKEN');
+  const hf = await axios.post(
+    'https://router.huggingface.co/hf-inference/models/stabilityai/stable-diffusion-2-1',
+    { inputs: prompt },
+    {
+      responseType: 'arraybuffer', timeout: 120000,
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    }
+  );
+  const ct = hf.headers['content-type'] || '';
+  if (!ct.includes('image') || hf.data?.byteLength < 500) throw new Error('HF non-image response');
+  return { buffer: Buffer.from(hf.data), ct };
+}
 
 // ─────────────────────────────────────────────
 //  Image generation proxy
@@ -104,18 +157,26 @@ app.get('/api/generate-image', async (req, res) => {
   if (!prompt) return res.status(400).json({ error: 'prompt required' });
 
   const seed = Math.floor(Math.random() * 999999);
-  const fullPrompt = prompt; // Express already decodes query params
+  const fullPrompt = prompt;
 
-  // ── 1. Pollinations with browser headers ──────
-  const models = ['flux-schnell', 'flux', 'turbo'];
-  for (const model of models) {
+  // ── 1. HuggingFace (if token set) ──────────────
+  if (process.env.HUGGINGFACE_TOKEN) {
     try {
-      const encoded = encodeURIComponent(fullPrompt);
-      const url = `https://image.pollinations.ai/prompt/${encoded}?model=${model}&seed=${seed}&width=1024&height=1024&nologo=true`;
+      console.log('🤗 HuggingFace...');
+      const { buffer, ct } = await generateWithHuggingFace(fullPrompt);
+      console.log(`✅ HuggingFace OK: ${buffer.length}b`);
+      res.set('Content-Type', ct);
+      res.set('Cache-Control', 'no-store');
+      return res.send(buffer);
+    } catch (e) { console.log(`⚠️ HuggingFace: ${e.message}`); }
+  }
+
+  // ── 2. Pollinations (might work if not rate-limited) ───────────
+  for (const model of ['flux-schnell', 'flux', 'turbo']) {
+    try {
+      const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?model=${model}&seed=${seed}&width=1024&height=1024&nologo=true`;
       console.log(`🎨 Pollinations (${model})...`);
-      const resp = await axios.get(url, {
-        responseType: 'arraybuffer', timeout: 120000, headers: BROWSER_HEADERS,
-      });
+      const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 120000, headers: BROWSER_HEADERS });
       const ct = resp.headers['content-type'] || '';
       if (ct.includes('image') && resp.data?.byteLength > 500) {
         console.log(`✅ Pollinations OK (${model}): ${resp.data.byteLength}b`);
@@ -126,40 +187,15 @@ app.get('/api/generate-image', async (req, res) => {
     } catch (e) { console.log(`⚠️ Pollinations (${model}): ${e.message}`); }
   }
 
-  // ── 2. Craiyon fallback ────────────────────────
+  // ── 3. Stable Horde (always free, slower) ─────────────────────
   try {
-    console.log('🖼 Trying Craiyon...');
-    const cr = await axios.post('https://api.craiyon.com/v3', {
-      prompt: fullPrompt, negative_prompt: '', model: 'photo', token: null, version: 'c4ue22fb7kb6wlac',
-    }, { timeout: 120000 });
-    const images = cr.data?.images;
-    if (Array.isArray(images) && images.length > 0) {
-      const buf = Buffer.from(images[0], 'base64');
-      if (buf.length > 500) {
-        console.log(`✅ Craiyon OK: ${buf.length}b`);
-        res.set('Content-Type', 'image/jpeg');
-        res.set('Cache-Control', 'no-store');
-        return res.send(buf);
-      }
-    }
-  } catch (e) { console.log(`⚠️ Craiyon: ${e.message}`); }
-
-  // ── 3. HuggingFace SD fallback ─────────────────
-  try {
-    console.log('🤗 Trying HuggingFace SD...');
-    const hf = await axios.post(
-      'https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1',
-      { inputs: fullPrompt },
-      { responseType: 'arraybuffer', timeout: 60000, headers: { 'Content-Type': 'application/json', 'X-Wait-For-Model': 'true' } }
-    );
-    const ct = hf.headers['content-type'] || '';
-    if (ct.includes('image') && hf.data?.byteLength > 500) {
-      console.log(`✅ HuggingFace OK: ${hf.data.byteLength}b`);
-      res.set('Content-Type', ct);
-      res.set('Cache-Control', 'no-store');
-      return res.send(Buffer.from(hf.data));
-    }
-  } catch (e) { console.log(`⚠️ HuggingFace: ${e.message}`); }
+    console.log('🐴 Stable Horde...');
+    const buf = await generateWithStableHorde(fullPrompt);
+    console.log(`✅ Stable Horde OK: ${buf.length}b`);
+    res.set('Content-Type', 'image/webp');
+    res.set('Cache-Control', 'no-store');
+    return res.send(buf);
+  } catch (e) { console.log(`⚠️ Stable Horde: ${e.message}`); }
 
   return res.status(500).json({ error: 'ไม่สามารถสร้างรูปภาพได้ กรุณาลองใหม่อีกครั้ง' });
 });
@@ -184,21 +220,33 @@ app.get('/api/generate-video', async (req, res) => {
   const fullPrompt = decodeURIComponent(prompt);
   console.log(`🎬 Generating ${numImages} images for ${durationSec}s video (${secPerFrame.toFixed(1)}s/frame)...`);
 
-  // ── Generate images in parallel ────────────────
+  // ── Generate images (using same fallback chain as image proxy) ──
+  async function getOneImage(scenePrompt, imgSeed) {
+    // Try HuggingFace first if token available
+    if (process.env.HUGGINGFACE_TOKEN) {
+      try {
+        const { buffer } = await generateWithHuggingFace(scenePrompt);
+        return buffer;
+      } catch (e) { console.log(`⚠️ HF img: ${e.message}`); }
+    }
+    // Try Pollinations
+    const encoded = encodeURIComponent(scenePrompt + ', cinematic, 4k');
+    const url = `https://image.pollinations.ai/prompt/${encoded}?model=flux-schnell&seed=${imgSeed}&width=1280&height=720&nologo=true`;
+    try {
+      const r = await axios.get(url, { responseType: 'arraybuffer', timeout: 90000, headers: BROWSER_HEADERS });
+      const ct = r.headers['content-type'] || '';
+      if (ct.includes('image') && r.data?.byteLength > 500) return Buffer.from(r.data);
+    } catch (e) { console.log(`⚠️ Poll img: ${e.message}`); }
+    // Stable Horde fallback
+    return generateWithStableHorde(scenePrompt);
+  }
+
+  // Generate images in parallel
   const imagePromises = Array.from({ length: numImages }, (_, i) => {
     const scenePrompt = i === 0 ? fullPrompt : `${fullPrompt}, scene ${i + 1}`;
-    const encoded = encodeURIComponent(scenePrompt + ', cinematic, high quality, 4k');
-    const url = `https://image.pollinations.ai/prompt/${encoded}?model=flux-schnell&seed=${seed + i * 137}&width=1280&height=720&nologo=true`;
-    return axios.get(url, { responseType: 'arraybuffer', timeout: 110000, headers: BROWSER_HEADERS })
-      .then(r => {
-        const ct = r.headers['content-type'] || '';
-        if (ct.includes('image') && r.data?.byteLength > 500) {
-          console.log(`✅ Image ${i + 1}/${numImages} OK (${r.data.byteLength} bytes)`);
-          return Buffer.from(r.data);
-        }
-        return null;
-      })
-      .catch(e => { console.log(`⚠️ Image ${i + 1} failed: ${e.message}`); return null; });
+    return getOneImage(scenePrompt, seed + i * 137)
+      .then(buf => { console.log(`✅ Image ${i + 1}/${numImages} OK`); return buf; })
+      .catch(e => { console.log(`⚠️ Image ${i + 1} all failed: ${e.message}`); return null; });
   });
 
   const imageBuffers = (await Promise.all(imagePromises)).filter(Boolean);

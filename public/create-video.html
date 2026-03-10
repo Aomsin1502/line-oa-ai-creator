@@ -291,7 +291,7 @@
       }, interval);
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 min
+      const timeoutId = setTimeout(() => controller.abort(), 8 * 60 * 1000); // 8 min
 
       try {
         const apiUrl = `/api/generate-video?prompt=${encodeURIComponent(prompt)}&userId=${userId}&duration=${duration}`;
