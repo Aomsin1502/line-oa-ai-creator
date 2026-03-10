@@ -57,6 +57,41 @@ app.get('/', (req, res) => {
 });
 
 // ─────────────────────────────────────────────
+//  Image generation proxy (server-side → avoids CORS + fallback)
+// ─────────────────────────────────────────────
+app.get('/api/generate-image', async (req, res) => {
+  const { prompt } = req.query;
+  if (!prompt) return res.status(400).json({ error: 'prompt required' });
+
+  const seed = Math.floor(Math.random() * 999999);
+  const fullPrompt = decodeURIComponent(prompt);
+
+  const models = ['flux-schnell', 'flux', 'turbo'];
+  for (const model of models) {
+    try {
+      const encoded = encodeURIComponent(fullPrompt);
+      const url = `https://image.pollinations.ai/prompt/${encoded}?model=${model}&seed=${seed}&width=1024&height=1024&nologo=true`;
+      console.log(`🎨 Trying Pollinations image (${model})...`);
+
+      const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 120000 });
+      const ct = resp.headers['content-type'] || '';
+
+      if (ct.includes('image') && resp.data?.byteLength > 500) {
+        console.log(`✅ Image success (${model}):`, ct, resp.data.byteLength, 'bytes');
+        res.set('Content-Type', ct);
+        res.set('Cache-Control', 'no-store');
+        return res.send(Buffer.from(resp.data));
+      }
+      console.log(`⚠️ Model ${model} returned non-image:`, ct);
+    } catch (e) {
+      console.log(`⚠️ Model ${model} failed:`, e.message);
+    }
+  }
+
+  return res.status(500).json({ error: 'ไม่สามารถสร้างรูปภาพได้ กรุณาลองใหม่อีกครั้ง' });
+});
+
+// ─────────────────────────────────────────────
 //  Video generation proxy (server-side → avoids CORS + fallback)
 // ─────────────────────────────────────────────
 app.get('/api/generate-video', async (req, res) => {

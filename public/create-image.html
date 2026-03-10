@@ -239,7 +239,6 @@
       if (!prompt) { showError('กรุณาใส่คำอธิบายรูปภาพ'); return; }
       if (prompt.length < 3) { showError('คำอธิบายต้องมีอย่างน้อย 3 ตัวอักษร'); return; }
 
-      // UI: show loading
       document.getElementById('createBtn').disabled = true;
       document.getElementById('errorBox').style.display = 'none';
       document.getElementById('loading').style.display = 'block';
@@ -250,37 +249,43 @@
         document.getElementById('loadingMsg').textContent = LOADING_MSGS[idx++ % LOADING_MSGS.length];
       }, 3500);
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3 * 60 * 1000); // 3 นาที
+
       try {
         const seed = Math.floor(Math.random() * 999999);
-        const encoded = encodeURIComponent(prompt);
-        // flux-schnell = fastest model (~10-20s), nologo=true, enhance=true ช่วยให้ตรงกับ prompt มากขึ้น
-        const url = `https://image.pollinations.ai/prompt/${encoded}?model=flux-schnell&seed=${seed}&width=1024&height=1024&nologo=true&enhance=true`;
+        const apiUrl = `/api/generate-image?prompt=${encodeURIComponent(prompt)}&seed=${seed}`;
 
-        generatedUrl = url;
-        const resultImg = document.getElementById('resultImg');
+        const response = await fetch(apiUrl, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        clearInterval(ticker);
 
-        // แสดงรูปทันที — ไม่รอ pre-load ให้ browser จัดการ
-        await new Promise((resolve, reject) => {
-          resultImg.onload = resolve;
-          resultImg.onerror = () => reject(new Error('load_failed'));
-          resultImg.src = url;
-          // แสดง result div ก่อน เพื่อให้เห็น loading skeleton ของ img
-          clearInterval(ticker);
-          document.getElementById('loading').style.display = 'none';
-          document.getElementById('result').style.display = 'block';
-          setTimeout(() => reject(new Error('timeout')), 60000);
-        });
+        if (!response.ok) {
+          let errMsg = 'เกิดข้อผิดพลาดในการสร้างรูปภาพ';
+          try { const d = await response.json(); errMsg = d.error || errMsg; } catch {}
+          throw new Error(errMsg);
+        }
+
+        const blob = await response.blob();
+        if (blob.size < 500) throw new Error('ไฟล์รูปภาพไม่ถูกต้อง กรุณาลองใหม่');
+
+        if (generatedUrl) URL.revokeObjectURL(generatedUrl);
+        generatedUrl = URL.createObjectURL(blob);
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('result').style.display = 'block';
+        document.getElementById('resultImg').src = generatedUrl;
 
       } catch (err) {
+        clearTimeout(timeoutId);
         clearInterval(ticker);
         document.getElementById('loading').style.display = 'none';
         document.getElementById('result').style.display = 'none';
         document.getElementById('createBtn').disabled = false;
-        if (err.message === 'timeout') {
-          showError('ใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้ง');
-        } else {
-          showError('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
-        }
+        const msg = err.name === 'AbortError'
+          ? 'ใช้เวลานานเกินไป กรุณาลองใหม่'
+          : (err.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่');
+        showError(msg);
         generatedUrl = null;
       }
     }
@@ -291,26 +296,21 @@
       el.style.display = 'block';
     }
 
-    async function downloadImg() {
+    function downloadImg() {
       if (!generatedUrl) return;
-      try {
-        const res = await fetch(generatedUrl);
-        const blob = await res.blob();
-        const a = Object.assign(document.createElement('a'), {
-          href: URL.createObjectURL(blob),
-          download: `ai-image-${Date.now()}.jpg`,
-        });
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      } catch {
-        window.open(generatedUrl, '_blank');
-      }
+      const a = document.createElement('a');
+      a.href = generatedUrl; // blob URL — ดาวน์โหลดได้ทันที
+      a.download = `ai-image-${Date.now()}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     }
 
     function resetForm() {
+      if (generatedUrl) URL.revokeObjectURL(generatedUrl);
       generatedUrl = null;
       document.getElementById('result').style.display = 'none';
+      document.getElementById('resultImg').src = '';
       document.getElementById('createBtn').disabled = false;
       document.getElementById('prompt').value = '';
       document.getElementById('prompt').focus();
