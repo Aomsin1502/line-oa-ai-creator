@@ -186,7 +186,6 @@
     <div class="header">
       <div class="icon">🎬</div>
       <h1>สร้างวิดีโอ AI</h1>
-      <div class="plan-badge" id="planBadge">กำลังโหลด...</div>
     </div>
 
     <div id="formSection">
@@ -207,11 +206,7 @@
       </div>
 
       <div class="duration-section" style="margin-top:20px;">
-        <label>⏱ ระยะเวลาวิดีโอ</label>
-        <div class="duration-info">
-          <div>แผน: <span class="plan-name" id="planName">...</span></div>
-          <div>ระยะเวลาสูงสุดที่สร้างได้: <span class="limit" id="maxDurationText">...</span></div>
-        </div>
+        <label>⏱ ระยะเวลาวิดีโอ (สูงสุด <span id="maxDurationText">...</span>)</label>
         <div class="duration-slider-wrap">
           <div class="duration-display"><span id="sliderVal">1</span> <span>นาที</span></div>
           <input type="range" id="durationSlider" min="1" max="5" value="1" step="1" oninput="updateSlider(this.value)" />
@@ -255,29 +250,11 @@
 
   <script>
     const params = new URLSearchParams(location.search);
-    const plan = params.get('plan') || 'trailer';
     const maxDuration = parseInt(params.get('maxDuration') || '5');
 
-    // Set plan badge & info
-    const badge = document.getElementById('planBadge');
-    const planName = document.getElementById('planName');
-    const maxText = document.getElementById('maxDurationText');
-    const slider = document.getElementById('durationSlider');
-    const maxLabel = document.getElementById('maxLabel');
-
-    if (plan === 'vip') {
-      badge.textContent = '⭐ VIP';
-      badge.style.background = '#8E44AD';
-      planName.textContent = 'VIP (1 ปี)';
-    } else {
-      badge.textContent = '🎬 Trailer';
-      badge.style.background = '#27AE60';
-      planName.textContent = 'Trailer (1 เดือน)';
-    }
-
-    maxText.textContent = `${maxDuration} นาที`;
-    slider.max = maxDuration;
-    maxLabel.textContent = `${maxDuration} นาที`;
+    document.getElementById('maxDurationText').textContent = `${maxDuration} นาที`;
+    document.getElementById('durationSlider').max = maxDuration;
+    document.getElementById('maxLabel').textContent = `${maxDuration} นาที`;
 
     function updateSlider(val) {
       document.getElementById('sliderVal').textContent = val;
