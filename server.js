@@ -372,7 +372,9 @@ async function handleCreateVideo(event, userId) {
 
   const maxDuration = user.plan === 'vip' ? 20 : 5;
   const pageUrl = `${process.env.BASE_URL}/public/create-video.html?userId=${userId}&plan=${user.plan}&maxDuration=${maxDuration}`;
-  const imgUrl = `${process.env.BASE_URL}/public/richmessage-video.jpg`;
+  const imgUrl = user.plan === 'vip'
+    ? `${process.env.BASE_URL}/public/richmessage-video-vip.jpg`
+    : `${process.env.BASE_URL}/public/richmessage-video-trailer.jpg`;
 
   return client.replyMessage({
     replyToken: event.replyToken,
