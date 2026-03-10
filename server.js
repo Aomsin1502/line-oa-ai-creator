@@ -57,6 +57,71 @@ app.get('/', (req, res) => {
 });
 
 // ─────────────────────────────────────────────
+//  Video generation proxy (server-side → avoids CORS + fallback)
+// ─────────────────────────────────────────────
+app.get('/api/generate-video', async (req, res) => {
+  const { prompt, userId } = req.query;
+  if (!prompt) return res.status(400).json({ error: 'prompt required' });
+
+  // ตรวจว่าเป็นสมาชิกจริง
+  const user = db.getUser(userId);
+  if (!user || !user.isActive) {
+    return res.status(403).json({ error: 'กรุณาสมัครสมาชิกก่อนสร้างวิดีโอ' });
+  }
+
+  const seed = Math.floor(Math.random() * 999999);
+  const fullPrompt = decodeURIComponent(prompt) + ', cinematic, high quality';
+
+  // ── ลอง Pollinations video API ──────────────────
+  try {
+    const encoded = encodeURIComponent(fullPrompt);
+    const url = `https://video.pollinations.ai/prompt/${encoded}?seed=${seed}&width=1280&height=720&nologo=true`;
+    console.log('🎬 Trying Pollinations video...');
+
+    const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 300000 });
+    const ct = resp.headers['content-type'] || '';
+    console.log('Pollinations response:', ct, resp.data?.byteLength, 'bytes');
+
+    if (ct.includes('video') || ct.includes('octet-stream')) {
+      res.set('Content-Type', 'video/mp4');
+      return res.send(Buffer.from(resp.data));
+    }
+    const preview = Buffer.from(resp.data).slice(0, 300).toString('utf8');
+    console.log('Pollinations non-video preview:', preview);
+    throw new Error('Not a video: ' + ct);
+  } catch (e1) {
+    console.log('⚠️ Pollinations failed:', e1.message);
+  }
+
+  // ── Fallback: Hugging Face text-to-video ────────
+  try {
+    console.log('🤗 Trying HuggingFace text-to-video...');
+    const resp = await axios.post(
+      'https://api-inference.huggingface.co/models/damo-vilab/text-to-video-ms-1.7b',
+      { inputs: fullPrompt },
+      {
+        responseType: 'arraybuffer',
+        timeout: 120000,
+        headers: { 'Content-Type': 'application/json', 'X-Wait-For-Model': 'true' },
+      }
+    );
+    const ct = resp.headers['content-type'] || '';
+    console.log('HuggingFace response:', ct, resp.data?.byteLength, 'bytes');
+
+    if (ct.includes('video') || ct.includes('octet-stream')) {
+      console.log('✅ HuggingFace video success');
+      res.set('Content-Type', 'video/mp4');
+      return res.send(Buffer.from(resp.data));
+    }
+    throw new Error('HF not a video: ' + ct);
+  } catch (e2) {
+    console.error('❌ HuggingFace failed:', e2.message);
+  }
+
+  return res.status(500).json({ error: 'ไม่สามารถสร้างวิดีโอได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง' });
+});
+
+// ─────────────────────────────────────────────
 //  Admin Panel (password protected)
 // ─────────────────────────────────────────────
 const ADMIN_PASS = process.env.ADMIN_PASSWORD || 'admin1234';

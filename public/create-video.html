@@ -275,6 +275,7 @@
     ];
 
     let generatedVideoUrl = null;
+    const userId = new URLSearchParams(location.search).get('userId') || '';
 
     async function createVideo() {
       const prompt = document.getElementById('prompt').value.trim();
@@ -289,7 +290,7 @@
       document.getElementById('result').style.display = 'none';
 
       // Progress timing: duration × 2 นาที ÷ 1.5 = ~80s ต่อนาทีของวิดีโอ
-      const totalMs = duration * 2 * 60 * 1000 / 1.5;
+      const totalMs = Math.max(duration * 80 * 1000, 30000);
       const interval = 800;
       const increment = (interval / totalMs) * 100;
 
@@ -302,40 +303,51 @@
         document.getElementById('progressLabel').textContent = Math.floor(progress) + '%';
       }, interval);
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8 * 60 * 1000);
+
       try {
         const seed = Math.floor(Math.random() * 999999);
-        const encoded = encodeURIComponent(prompt + ', cinematic, high quality');
-        const url = `https://video.pollinations.ai/prompt/${encoded}?seed=${seed}&width=1280&height=720&nologo=true`;
+        const apiUrl = `/api/generate-video?prompt=${encodeURIComponent(prompt)}&seed=${seed}&userId=${userId}`;
 
-        generatedVideoUrl = url;
-        const videoEl = document.getElementById('resultVideo');
+        const response = await fetch(apiUrl, { signal: controller.signal });
+        clearTimeout(timeoutId);
 
-        await new Promise((resolve, reject) => {
-          const timeoutId = setTimeout(() => reject(new Error('timeout')), 8 * 60 * 1000);
-          videoEl.onloadeddata = () => { clearTimeout(timeoutId); resolve(); };
-          videoEl.onerror = () => { clearTimeout(timeoutId); reject(new Error('video_failed')); };
-          videoEl.src = url;
-        });
+        if (!response.ok) {
+          let errMsg = 'เกิดข้อผิดพลาดในการสร้างวิดีโอ';
+          try { const d = await response.json(); errMsg = d.error || errMsg; } catch {}
+          throw new Error(errMsg);
+        }
+
+        const blob = await response.blob();
+        if (blob.size < 100) throw new Error('ไฟล์วิดีโอไม่ถูกต้อง กรุณาลองใหม่');
+
+        // เคลียร์ blob URL เก่าก่อน
+        if (generatedVideoUrl) URL.revokeObjectURL(generatedVideoUrl);
+        generatedVideoUrl = URL.createObjectURL(blob);
 
         clearInterval(ticker);
         document.getElementById('progressBar').style.width = '100%';
         document.getElementById('progressLabel').textContent = '100%';
+        await new Promise(r => setTimeout(r, 400));
 
-        await new Promise(r => setTimeout(r, 500));
         document.getElementById('loading').style.display = 'none';
         document.getElementById('result').style.display = 'block';
+
+        const videoEl = document.getElementById('resultVideo');
+        videoEl.src = generatedVideoUrl;
         videoEl.play().catch(() => {});
 
       } catch (err) {
+        clearTimeout(timeoutId);
         clearInterval(ticker);
         document.getElementById('loading').style.display = 'none';
         document.getElementById('createBtn').disabled = false;
         generatedVideoUrl = null;
-        if (err.message === 'timeout') {
-          showError('ใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้ง');
-        } else {
-          showError('เกิดข้อผิดพลาดในการสร้างวิดีโอ กรุณาลองใหม่');
-        }
+        const msg = err.name === 'AbortError'
+          ? 'ใช้เวลานานเกินไป กรุณาลองใหม่'
+          : (err.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่');
+        showError(msg);
       }
     }
 
@@ -345,21 +357,14 @@
       el.style.display = 'block';
     }
 
-    async function downloadVideo() {
+    function downloadVideo() {
       if (!generatedVideoUrl) return;
-      try {
-        const res = await fetch(generatedVideoUrl);
-        const blob = await res.blob();
-        const a = Object.assign(document.createElement('a'), {
-          href: URL.createObjectURL(blob),
-          download: `ai-video-${Date.now()}.mp4`,
-        });
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-      } catch {
-        window.open(generatedVideoUrl, '_blank');
-      }
+      const a = document.createElement('a');
+      a.href = generatedVideoUrl; // blob URL — ดาวน์โหลดได้ทันที
+      a.download = `ai-video-${Date.now()}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     }
 
     function resetForm() {
