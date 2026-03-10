@@ -326,26 +326,30 @@ async function handleCreateImage(event, userId) {
   const user = db.getUser(userId);
   const plan = (user && user.isActive) ? user.plan : 'visitor';
   const pageUrl = `${process.env.BASE_URL}/public/create-image.html?userId=${userId}&plan=${plan}`;
+  const imgUrl = `${process.env.BASE_URL}/public/richmessage-image.jpg`;
 
   return client.replyMessage({
     replyToken: event.replyToken,
     messages: [
       {
         type: 'flex',
-        altText: 'สร้างรูปภาพ AI',
+        altText: 'สร้างรูปภาพ AI — คลิกเพื่อเริ่มสร้าง',
         contents: {
           type: 'bubble',
-          body: {
-            type: 'box', layout: 'vertical', spacing: 'md',
-            contents: [
-              { type: 'text', text: '🎨 สร้างรูปภาพ AI', weight: 'bold', size: 'lg' },
-              { type: 'text', text: 'ฟรี! สร้างรูปภาพด้วย AI ได้เลย', size: 'sm', color: '#27AE60' },
-              { type: 'text', text: 'คลิกปุ่มด้านล่างเพื่อเริ่มสร้างรูปภาพ', size: 'sm', color: '#666666', wrap: true },
-            ],
+          hero: {
+            type: 'image',
+            url: imgUrl,
+            size: 'full',
+            aspectRatio: '5:3',
+            aspectMode: 'cover',
+            action: { type: 'uri', uri: pageUrl },
           },
           footer: {
-            type: 'box', layout: 'vertical',
-            contents: [{ type: 'button', style: 'link', color: '#6C63FF', action: { type: 'uri', label: '🎨 เปิดหน้าสร้างรูป', uri: pageUrl } }],
+            type: 'box', layout: 'vertical', spacing: 'none', paddingAll: '12px',
+            contents: [{
+              type: 'button', style: 'primary',
+              action: { type: 'uri', label: '🎨 เริ่มสร้างรูปภาพ', uri: pageUrl },
+            }],
           },
         },
       },
@@ -368,27 +372,30 @@ async function handleCreateVideo(event, userId) {
 
   const maxDuration = user.plan === 'vip' ? 20 : 5;
   const pageUrl = `${process.env.BASE_URL}/public/create-video.html?userId=${userId}&plan=${user.plan}&maxDuration=${maxDuration}`;
+  const imgUrl = `${process.env.BASE_URL}/public/richmessage-video.jpg`;
 
   return client.replyMessage({
     replyToken: event.replyToken,
     messages: [
       {
         type: 'flex',
-        altText: 'สร้างวิดีโอ AI',
+        altText: 'สร้างวิดีโอ AI — คลิกเพื่อเริ่มสร้าง',
         contents: {
           type: 'bubble',
-          body: {
-            type: 'box', layout: 'vertical', spacing: 'md',
-            contents: [
-              { type: 'text', text: '🎬 สร้างวิดีโอ AI', weight: 'bold', size: 'lg' },
-              { type: 'text', text: `แผน: ${planLabel(user.plan)} ✅`, size: 'sm', color: '#27AE60' },
-              { type: 'text', text: `ระยะเวลาสูงสุด: ${maxDuration} นาที`, size: 'sm', color: '#E74C3C', weight: 'bold' },
-              { type: 'text', text: 'คลิกปุ่มด้านล่างเพื่อเริ่มสร้างวิดีโอ', size: 'sm', color: '#666666', wrap: true },
-            ],
+          hero: {
+            type: 'image',
+            url: imgUrl,
+            size: 'full',
+            aspectRatio: '3:2',
+            aspectMode: 'cover',
+            action: { type: 'uri', uri: pageUrl },
           },
           footer: {
-            type: 'box', layout: 'vertical',
-            contents: [{ type: 'button', style: 'link', color: '#E74C3C', action: { type: 'uri', label: '🎬 เปิดหน้าสร้างวิดีโอ', uri: pageUrl } }],
+            type: 'box', layout: 'vertical', spacing: 'none', paddingAll: '12px',
+            contents: [{
+              type: 'button', style: 'primary',
+              action: { type: 'uri', label: '🎬 เริ่มสร้างวิดีโอ', uri: pageUrl },
+            }],
           },
         },
       },
@@ -416,82 +423,42 @@ async function handleSubscription(event, userId) {
 }
 
 function trailerBubble(userId) {
+  const imgUrl = `${process.env.BASE_URL}/public/richmessage-trailer.jpg`;
   return {
     type: 'bubble', size: 'mega',
-    header: {
-      type: 'box', layout: 'vertical', paddingAll: '20px', backgroundColor: '#27AE60',
-      contents: [
-        { type: 'text', text: '🎬 Trailer', weight: 'bold', size: 'xl', color: '#ffffff' },
-        { type: 'text', text: '1 เดือน', size: 'sm', color: '#c8f5d7' },
-      ],
-    },
-    body: {
-      type: 'box', layout: 'vertical', spacing: 'md',
-      contents: [
-        { type: 'text', text: '199 บาท', weight: 'bold', size: 'xxl', color: '#27AE60' },
-        { type: 'separator' },
-        {
-          type: 'box', layout: 'vertical', spacing: 'sm', margin: 'md',
-          contents: [
-            { type: 'text', text: '✅ สร้างรูปภาพ AI ไม่จำกัด', size: 'sm' },
-            { type: 'text', text: '✅ สร้างวิดีโอสูงสุด 5 นาที', size: 'sm' },
-            { type: 'text', text: '✅ ใช้งานได้ 1 เดือน', size: 'sm' },
-          ],
-        },
-      ],
+    hero: {
+      type: 'image',
+      url: imgUrl,
+      size: 'full',
+      aspectRatio: '4:5',
+      aspectMode: 'cover',
     },
     footer: {
-      type: 'box', layout: 'vertical',
+      type: 'box', layout: 'vertical', spacing: 'none', paddingAll: '12px',
       contents: [{
         type: 'button', style: 'primary',
-        action: { type: 'postback', label: 'สมัคร 199 บาท', data: `action=pay&plan=trailer&userId=${userId}` },
+        action: { type: 'postback', label: 'สมัคร Trailer 199 บาท', data: `action=pay&plan=trailer&userId=${userId}` },
       }],
     },
   };
 }
 
 function vipBubble(userId) {
+  const imgUrl = `${process.env.BASE_URL}/public/richmessage-vip.jpg`;
   return {
     type: 'bubble', size: 'mega',
-    header: {
-      type: 'box', layout: 'vertical', paddingAll: '20px', backgroundColor: '#8E44AD',
-      contents: [
-        {
-          type: 'box', layout: 'horizontal',
-          contents: [
-            { type: 'text', text: '⭐ VIP', weight: 'bold', size: 'xl', color: '#ffffff', flex: 1 },
-            {
-              type: 'box', layout: 'vertical', backgroundColor: '#FFD700',
-              paddingAll: '4px', cornerRadius: '4px',
-              contents: [{ type: 'text', text: 'BEST VALUE', size: 'xs', color: '#6B3E00', weight: 'bold' }],
-            },
-          ],
-        },
-        { type: 'text', text: '1 ปี', size: 'sm', color: '#d4a8f0' },
-      ],
-    },
-    body: {
-      type: 'box', layout: 'vertical', spacing: 'md',
-      contents: [
-        { type: 'text', text: '1,999 บาท', weight: 'bold', size: 'xxl', color: '#8E44AD' },
-        { type: 'text', text: 'ประหยัด 62% เทียบรายเดือน', size: 'xs', color: '#E74C3C', weight: 'bold' },
-        { type: 'separator' },
-        {
-          type: 'box', layout: 'vertical', spacing: 'sm', margin: 'md',
-          contents: [
-            { type: 'text', text: '✅ สร้างรูปภาพ AI ไม่จำกัด', size: 'sm' },
-            { type: 'text', text: '✅ สร้างวิดีโอสูงสุด 20 นาที', size: 'sm' },
-            { type: 'text', text: '✅ ใช้งานได้ 1 ปี', size: 'sm' },
-            { type: 'text', text: '✅ สิทธิพิเศษ VIP ตลอดปี', size: 'sm', color: '#8E44AD' },
-          ],
-        },
-      ],
+    hero: {
+      type: 'image',
+      url: imgUrl,
+      size: 'full',
+      aspectRatio: '4:5',
+      aspectMode: 'cover',
     },
     footer: {
-      type: 'box', layout: 'vertical',
+      type: 'box', layout: 'vertical', spacing: 'none', paddingAll: '12px',
       contents: [{
         type: 'button', style: 'primary',
-        action: { type: 'postback', label: 'สมัคร 1,999 บาท', data: `action=pay&plan=vip&userId=${userId}` },
+        action: { type: 'postback', label: 'สมัคร VIP 1,999 บาท', data: `action=pay&plan=vip&userId=${userId}` },
       }],
     },
   };
