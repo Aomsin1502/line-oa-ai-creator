@@ -129,7 +129,12 @@ async function generateWithStableHorde(prompt) {
     { headers, timeout: 15000 });
   const gen = result.data?.generations?.[0];
   if (!gen || gen.state !== 'ok') throw new Error('No result from Stable Horde');
-  return Buffer.from(gen.img, 'base64');
+
+  // gen.img is a URL (Cloudflare R2), fetch it
+  const imgResp = await axios.get(gen.img, { responseType: 'arraybuffer', timeout: 30000 });
+  const imgBuf = Buffer.from(imgResp.data);
+  if (imgBuf.length < 500) throw new Error(`Stable Horde image too small: ${imgBuf.length}b`);
+  return imgBuf;
 }
 
 // ── HuggingFace (requires HUGGINGFACE_TOKEN env var) ────────────
