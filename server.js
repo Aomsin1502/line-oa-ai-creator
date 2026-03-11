@@ -159,6 +159,18 @@ async function generateWithStableHorde(prompt) {
   return imgBuf;
 }
 
+// ── CF Worker proxy → Pollinations (unlimited free, ~5s) ─────────
+async function generateWithCFWorker(prompt, seed) {
+  const workerUrl = process.env.CF_WORKER_URL;
+  if (!workerUrl) throw new Error('No CF_WORKER_URL');
+  const url = `${workerUrl}?prompt=${encodeURIComponent(prompt)}&seed=${seed}&width=1024&height=1024`;
+  const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 60000 });
+  const ct = resp.headers['content-type'] || '';
+  if (!ct.includes('image') || resp.data?.byteLength < 500)
+    throw new Error(`CF Worker bad response: ${ct} ${resp.data?.byteLength}b`);
+  return { buffer: Buffer.from(resp.data), ct };
+}
+
 // ── Cloudflare Workers AI — FLUX Schnell (free tier, ~5-15s) ────
 async function generateWithCloudflare(prompt) {
   const accountId = process.env.CF_ACCOUNT_ID;
@@ -225,19 +237,31 @@ app.get('/api/generate-image', async (req, res) => {
   const seed = Math.floor(Math.random() * 999999);
   const fullPrompt = await translateToEnglish(prompt);
 
-  // ── 1. Cloudflare Workers AI — FLUX Schnell (free, ~5-15s) ───────
-  if (process.env.CF_ACCOUNT_ID && process.env.CF_API_TOKEN) {
+  // ── 1. CF Worker → Pollinations (unlimited free, ~5s) ────────────
+  if (process.env.CF_WORKER_URL) {
     try {
-      console.log('☁️ Cloudflare FLUX...');
-      const { buffer, ct } = await generateWithCloudflare(fullPrompt);
-      console.log(`✅ Cloudflare OK: ${buffer.length}b`);
+      console.log('🌐 CF Worker → Pollinations...');
+      const { buffer, ct } = await generateWithCFWorker(fullPrompt, seed);
+      console.log(`✅ CF Worker OK: ${buffer.length}b`);
       res.set('Content-Type', ct);
       res.set('Cache-Control', 'no-store');
       return res.send(buffer);
-    } catch (e) { console.log(`⚠️ Cloudflare: ${e.message}`); }
+    } catch (e) { console.log(`⚠️ CF Worker: ${e.message}`); }
   }
 
-  // ── 2. Stable Horde (registered key = priority queue) ────────────
+  // ── 2. Cloudflare Workers AI — FLUX Schnell (~10s) ───────────────
+  if (process.env.CF_ACCOUNT_ID && process.env.CF_API_TOKEN) {
+    try {
+      console.log('☁️ Cloudflare AI FLUX...');
+      const { buffer, ct } = await generateWithCloudflare(fullPrompt);
+      console.log(`✅ Cloudflare AI OK: ${buffer.length}b`);
+      res.set('Content-Type', ct);
+      res.set('Cache-Control', 'no-store');
+      return res.send(buffer);
+    } catch (e) { console.log(`⚠️ Cloudflare AI: ${e.message}`); }
+  }
+
+  // ── 3. Stable Horde (registered key = priority queue) ────────────
   try {
     console.log('🐴 Stable Horde...');
     const buf = await generateWithStableHorde(fullPrompt);
@@ -286,9 +310,13 @@ app.get('/api/generate-video', async (req, res) => {
 
   // ── Generate images (same fallback chain as image proxy) ──
   async function getOneImage(scenePrompt) {
+    if (process.env.CF_WORKER_URL) {
+      try { const { buffer } = await generateWithCFWorker(scenePrompt, Math.floor(Math.random()*999999)); return buffer; }
+      catch (e) { console.log(`⚠️ CF Worker img: ${e.message}`); }
+    }
     if (process.env.CF_ACCOUNT_ID && process.env.CF_API_TOKEN) {
       try { const { buffer } = await generateWithCloudflare(scenePrompt); return buffer; }
-      catch (e) { console.log(`⚠️ CF img: ${e.message}`); }
+      catch (e) { console.log(`⚠️ CF AI img: ${e.message}`); }
     }
     try { return await generateWithStableHorde(scenePrompt); }
     catch (e) { console.log(`⚠️ Stable Horde img: ${e.message}`); }
