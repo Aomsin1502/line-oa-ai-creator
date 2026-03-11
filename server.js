@@ -6,11 +6,11 @@ const line = require('@line/bot-sdk');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const ffmpeg = require('fluent-ffmpeg');
+const { execFile } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
 const db = require('./db');
 
-ffmpeg.setFfmpegPath(ffmpegPath);
+// ffmpeg path configured for execFile calls
 
 const lineConfig = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
@@ -103,7 +103,7 @@ async function translateToEnglish(text) {
   if (thaiChars === 0) return text;
   try {
     const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q=${encodeURIComponent(text)}`;
-    const r = await axios.get(url, { timeout: 8000 });
+    const r = await axios.get(url, { timeout: 4000 });
     const translated = r.data?.[0]?.map(s => s?.[0]).filter(Boolean).join('') || text;
     console.log(`🌐 Translated: "${text.slice(0,40)}" → "${translated.slice(0,60)}"`);
     return translated;
@@ -119,15 +119,15 @@ async function generateWithStableHorde(prompt) {
   const headers = { 'Content-Type': 'application/json', 'apikey': HORDE_KEY };
 
   // Prepend quality booster tags
-  const enhancedPrompt = `${prompt}, highly detailed, sharp focus, professional photography, 8k`;
+  const enhancedPrompt = `${prompt}, highly detailed, sharp focus, masterpiece, best quality`;
 
-  // Submit job
+  // Submit job — prefer models with most workers
   const sub = await axios.post('https://stablehorde.net/api/v2/generate/async', {
     prompt: enhancedPrompt,
-    params: { width: 512, height: 512, steps: 25, n: 1, sampler_name: 'k_dpmpp_2m',
+    params: { width: 512, height: 512, steps: 15, n: 1, sampler_name: 'k_dpmpp_2m',
               cfg_scale: 7, karras: true },
     nsfw: false, censor_nsfw: true,
-    models: ['AlbedoBase XL (SDXL)', 'SDXL 1.0', 'stable_diffusion_xl'],
+    models: ['Deliberate', 'Dreamshaper', 'AbsoluteReality', 'stable_diffusion'],
     r2: true,
   }, { headers, timeout: 15000 });
 
@@ -159,6 +159,28 @@ async function generateWithStableHorde(prompt) {
   return imgBuf;
 }
 
+// ── fal.ai FLUX Schnell (requires FAL_KEY env var — free signup) ──
+async function generateWithFal(prompt) {
+  const token = process.env.FAL_KEY;
+  if (!token) throw new Error('No FAL_KEY');
+  const resp = await axios.post(
+    'https://fal.run/fal-ai/flux/schnell',
+    { prompt, image_size: 'square', num_inference_steps: 4, output_format: 'jpeg', sync_mode: true },
+    { headers: { 'Authorization': `Key ${token}`, 'Content-Type': 'application/json' }, timeout: 60000 }
+  );
+  const imageData = resp.data?.images?.[0]?.url;
+  if (!imageData) throw new Error('No image from fal');
+  let buf;
+  if (imageData.startsWith('data:')) {
+    buf = Buffer.from(imageData.split(',')[1], 'base64');
+  } else {
+    const r = await axios.get(imageData, { responseType: 'arraybuffer', timeout: 30000 });
+    buf = Buffer.from(r.data);
+  }
+  if (buf.length < 500) throw new Error(`fal image too small: ${buf.length}b`);
+  return { buffer: buf, ct: 'image/jpeg' };
+}
+
 // ── HuggingFace (requires HUGGINGFACE_TOKEN env var) ────────────
 async function generateWithHuggingFace(prompt) {
   const token = process.env.HUGGINGFACE_TOKEN;
@@ -186,7 +208,19 @@ app.get('/api/generate-image', async (req, res) => {
   const seed = Math.floor(Math.random() * 999999);
   const fullPrompt = await translateToEnglish(prompt);
 
-  // ── 1. HuggingFace (if token set) ──────────────
+  // ── 1. fal.ai FLUX Schnell (fastest, free credits) ─────────────
+  if (process.env.FAL_KEY) {
+    try {
+      console.log('⚡ fal.ai FLUX...');
+      const { buffer, ct } = await generateWithFal(fullPrompt);
+      console.log(`✅ fal.ai OK: ${buffer.length}b`);
+      res.set('Content-Type', ct);
+      res.set('Cache-Control', 'no-store');
+      return res.send(buffer);
+    } catch (e) { console.log(`⚠️ fal.ai: ${e.message}`); }
+  }
+
+  // ── 2. HuggingFace (if token set) ──────────────
   if (process.env.HUGGINGFACE_TOKEN) {
     try {
       console.log('🤗 HuggingFace...');
@@ -251,14 +285,18 @@ app.get('/api/generate-video', async (req, res) => {
 
   // ── Generate images (same fallback chain as image proxy) ──
   async function getOneImage(scenePrompt, imgSeed) {
+    if (process.env.FAL_KEY) {
+      try { const { buffer } = await generateWithFal(scenePrompt); return buffer; }
+      catch (e) { console.log(`⚠️ fal img: ${e.message}`); }
+    }
     if (process.env.HUGGINGFACE_TOKEN) {
       try { const { buffer } = await generateWithHuggingFace(scenePrompt); return buffer; }
       catch (e) { console.log(`⚠️ HF img: ${e.message}`); }
     }
     const encoded = encodeURIComponent(scenePrompt + ', cinematic, 4k');
-    const url = `https://image.pollinations.ai/prompt/${encoded}?model=flux-schnell&seed=${imgSeed}&width=1280&height=720&nologo=true`;
+    const url = `https://image.pollinations.ai/prompt/${encoded}?model=flux-schnell&seed=${imgSeed}&width=512&height=512&nologo=true`;
     try {
-      const r = await axios.get(url, { responseType: 'arraybuffer', timeout: 90000, headers: BROWSER_HEADERS });
+      const r = await axios.get(url, { responseType: 'arraybuffer', timeout: 60000, headers: BROWSER_HEADERS });
       const ct = r.headers['content-type'] || '';
       if (ct.includes('image') && r.data?.byteLength > 500) return Buffer.from(r.data);
     } catch (e) { console.log(`⚠️ Poll img: ${e.message}`); }
@@ -267,7 +305,7 @@ app.get('/api/generate-video', async (req, res) => {
 
   // Generate all images in parallel
   const imagePromises = Array.from({ length: numImages }, (_, i) => {
-    const scenePrompt = i === 0 ? fullPrompt : `${fullPrompt}, scene ${i + 1}`;
+    const scenePrompt = i === 0 ? fullPrompt : `${fullPrompt}, scene ${i + 1}, different angle`;
     return getOneImage(scenePrompt, seed + i * 137)
       .then(buf => { console.log(`✅ Image ${i + 1}/${numImages} OK`); return buf; })
       .catch(e => { console.log(`⚠️ Image ${i + 1} failed: ${e.message}`); return null; });
@@ -280,69 +318,67 @@ app.get('/api/generate-video', async (req, res) => {
     return res.status(500).json({ error: 'ไม่สามารถสร้างรูปภาพได้ กรุณาลองใหม่อีกครั้ง' });
   }
 
-  // ── Build MP4: Ken Burns (zoompan) per clip → concat ──
+  // ── Build MP4: xfade crossfade transitions (fast encode) ──
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'aivideo-'));
   const outputPath = path.join(tmpDir, 'output.mp4');
 
   try {
-    const actualSecPerClip = durationSec / imageBuffers.length;
-    const numFrames = Math.round(actualSecPerClip * FPS);
-    const clipPaths = [];
+    const N = imageBuffers.length;
+    const actualSecPerClip = durationSec / N;
+    const fadeDur = Math.min(0.8, actualSecPerClip * 0.25);
 
-    for (let i = 0; i < imageBuffers.length; i++) {
-      const imgPath = path.join(tmpDir, `img_${i}.jpg`);
-      fs.writeFileSync(imgPath, imageBuffers[i]);
+    // Save images
+    const imgPaths = imageBuffers.map((buf, i) => {
+      const p = path.join(tmpDir, `img_${i}.jpg`);
+      fs.writeFileSync(p, buf);
+      return p;
+    });
 
-      const clipPath = path.join(tmpDir, `clip_${i}.mp4`);
+    // Build ffmpeg args: all images as looped inputs + xfade filter_complex
+    const ffmpegArgs = [];
+    imgPaths.forEach(p => {
+      ffmpegArgs.push('-loop', '1', '-t', (actualSecPerClip + 1).toFixed(2), '-i', p);
+    });
 
-      // Ken Burns: even clips zoom in, odd clips zoom out
-      const zExpr = i % 2 === 0
-        ? `min(zoom+0.0012,1.2)`               // zoom in  1.0 → 1.2
-        : `if(eq(on,1),1.2,max(zoom-0.0012,1.0))`; // zoom out 1.2 → 1.0
+    const scaleFilter = (i) =>
+      `[${i}:v]scale=1280:720:force_original_aspect_ratio=decrease,` +
+      `pad=1280:720:(ow-iw)/2:(oh-ih)/2:black,fps=25,setsar=1,format=yuv420p[v${i}]`;
 
-      const zFilter = [
-        `scale=8000:-1`,  // upscale so zoompan has room to pan
-        `zoompan=z='${zExpr}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)'`,
-        `:d=${numFrames}:s=1280x720:fps=${FPS}`,
-        `,format=yuv420p`,
-      ].join('');
+    const scales = imgPaths.map((_, i) => scaleFilter(i)).join(';');
 
-      console.log(`🎞  Clip ${i + 1}: zoompan ${numFrames} frames (${actualSecPerClip.toFixed(1)}s)`);
-      await new Promise((resolve, reject) => {
-        ffmpeg()
-          .input(imgPath).inputOptions(['-loop 1'])
-          .videoFilter(zFilter)
-          .outputOptions([
-            `-c:v libx264`, `-preset veryfast`, `-crf 23`,
-            `-t ${actualSecPerClip.toFixed(3)}`, `-an`,
-          ])
-          .output(clipPath)
-          .on('end', resolve)
-          .on('error', (e, _stdout, stderr) => {
-            console.error(`❌ zoompan clip ${i} error:`, e.message, stderr?.slice(-300));
-            reject(e);
-          })
-          .run();
-      });
-      clipPaths.push(clipPath);
+    let chain = '';
+    let prevLabel = 'v0';
+    for (let i = 1; i < N; i++) {
+      const outLabel = i === N - 1 ? 'out' : `f${i}`;
+      const xOffset = (i * (actualSecPerClip - fadeDur)).toFixed(3);
+      chain += `${chain ? ';' : ''}[${prevLabel}][v${i}]xfade=transition=fade:duration=${fadeDur.toFixed(2)}:offset=${xOffset}[${outLabel}]`;
+      prevLabel = outLabel;
     }
 
-    // Concat all clips
-    const concatContent = clipPaths.map(p => `file '${p.replace(/\\/g, '/')}'`).join('\n');
-    const concatFile = path.join(tmpDir, 'concat.txt');
-    fs.writeFileSync(concatFile, concatContent);
+    const filterComplex = N === 1
+      ? `${scales};[v0]copy[out]`
+      : `${scales};${chain}`;
 
+    ffmpegArgs.push(
+      '-filter_complex', filterComplex,
+      '-map', '[out]',
+      '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+      '-pix_fmt', 'yuv420p', '-movflags', 'faststart',
+      '-t', durationSec.toFixed(2),
+      outputPath
+    );
+
+    console.log(`🎬 ffmpeg xfade: ${N} images, ${actualSecPerClip.toFixed(1)}s each, fade=${fadeDur.toFixed(2)}s`);
     await new Promise((resolve, reject) => {
-      ffmpeg()
-        .addInput(concatFile).inputOptions(['-f concat', '-safe 0'])
-        .outputOptions(['-c copy', '-movflags faststart'])
-        .output(outputPath)
-        .on('end', () => { console.log('✅ ffmpeg concat done'); resolve(); })
-        .on('error', (e, _stdout, stderr) => {
-          console.error('❌ ffmpeg concat error:', e.message, stderr?.slice(-300));
-          reject(e);
-        })
-        .run();
+      execFile(ffmpegPath, ffmpegArgs, { timeout: 180000 }, (err, _stdout, stderr) => {
+        if (err) {
+          console.error('❌ ffmpeg error:', stderr?.slice(-500));
+          reject(new Error(err.message));
+        } else {
+          console.log('✅ ffmpeg xfade done');
+          resolve();
+        }
+      });
     });
 
     const videoBuffer = fs.readFileSync(outputPath);
@@ -539,6 +575,7 @@ async function handleEvent(event) {
 //  Follow (new user)
 // ─────────────────────────────────────────────
 async function handleFollow(event) {
+  const greetingImgUrl = `${process.env.BASE_URL}/public/richmessage-greeting.png`;
   return client.replyMessage({
     replyToken: event.replyToken,
     messages: [
@@ -547,15 +584,12 @@ async function handleFollow(event) {
         altText: 'ยินดีต้อนรับสู่ AI Image And Video Creator!',
         contents: {
           type: 'bubble',
-          header: {
-            type: 'box',
-            layout: 'vertical',
-            paddingAll: '24px',
-            backgroundColor: '#6C63FF',
-            contents: [
-              { type: 'text', text: '🤖 AI Image & Video Creator', weight: 'bold', size: 'xl', color: '#ffffff', align: 'center' },
-              { type: 'text', text: 'สร้างรูปภาพและวิดีโอด้วย AI', size: 'sm', color: '#d4d0ff', align: 'center', margin: 'sm' },
-            ],
+          hero: {
+            type: 'image',
+            url: greetingImgUrl,
+            size: 'full',
+            aspectRatio: '20:13',
+            aspectMode: 'cover',
           },
           body: {
             type: 'box',
