@@ -208,47 +208,7 @@ app.get('/api/generate-image', async (req, res) => {
   const seed = Math.floor(Math.random() * 999999);
   const fullPrompt = await translateToEnglish(prompt);
 
-  // ── 1. fal.ai FLUX Schnell (fastest, free credits) ─────────────
-  if (process.env.FAL_KEY) {
-    try {
-      console.log('⚡ fal.ai FLUX...');
-      const { buffer, ct } = await generateWithFal(fullPrompt);
-      console.log(`✅ fal.ai OK: ${buffer.length}b`);
-      res.set('Content-Type', ct);
-      res.set('Cache-Control', 'no-store');
-      return res.send(buffer);
-    } catch (e) { console.log(`⚠️ fal.ai: ${e.message}`); }
-  }
-
-  // ── 2. HuggingFace (if token set) ──────────────
-  if (process.env.HUGGINGFACE_TOKEN) {
-    try {
-      console.log('🤗 HuggingFace...');
-      const { buffer, ct } = await generateWithHuggingFace(fullPrompt);
-      console.log(`✅ HuggingFace OK: ${buffer.length}b`);
-      res.set('Content-Type', ct);
-      res.set('Cache-Control', 'no-store');
-      return res.send(buffer);
-    } catch (e) { console.log(`⚠️ HuggingFace: ${e.message}`); }
-  }
-
-  // ── 2. Pollinations (might work if not rate-limited) ───────────
-  for (const model of ['flux-schnell', 'flux', 'turbo']) {
-    try {
-      const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?model=${model}&seed=${seed}&width=1024&height=1024&nologo=true`;
-      console.log(`🎨 Pollinations (${model})...`);
-      const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 120000, headers: BROWSER_HEADERS });
-      const ct = resp.headers['content-type'] || '';
-      if (ct.includes('image') && resp.data?.byteLength > 500) {
-        console.log(`✅ Pollinations OK (${model}): ${resp.data.byteLength}b`);
-        res.set('Content-Type', ct);
-        res.set('Cache-Control', 'no-store');
-        return res.send(Buffer.from(resp.data));
-      }
-    } catch (e) { console.log(`⚠️ Pollinations (${model}): ${e.message}`); }
-  }
-
-  // ── 3. Stable Horde (always free, slower) ─────────────────────
+  // ── 1. Stable Horde (registered key = priority queue) ────────────
   try {
     console.log('🐴 Stable Horde...');
     const buf = await generateWithStableHorde(fullPrompt);
@@ -257,6 +217,18 @@ app.get('/api/generate-image', async (req, res) => {
     res.set('Cache-Control', 'no-store');
     return res.send(buf);
   } catch (e) { console.log(`⚠️ Stable Horde: ${e.message}`); }
+
+  // ── 2. fal.ai fallback (if credit remains) ──────────────────────
+  if (process.env.FAL_KEY) {
+    try {
+      console.log('⚡ fal.ai fallback...');
+      const { buffer, ct } = await generateWithFal(fullPrompt);
+      console.log(`✅ fal.ai OK: ${buffer.length}b`);
+      res.set('Content-Type', ct);
+      res.set('Cache-Control', 'no-store');
+      return res.send(buffer);
+    } catch (e) { console.log(`⚠️ fal.ai: ${e.message}`); }
+  }
 
   return res.status(500).json({ error: 'ไม่สามารถสร้างรูปภาพได้ กรุณาลองใหม่อีกครั้ง' });
 });
@@ -284,29 +256,21 @@ app.get('/api/generate-video', async (req, res) => {
   console.log(`🎬 ${numImages} images × ${secPerClip.toFixed(1)}s each = ${durationSec}s video`);
 
   // ── Generate images (same fallback chain as image proxy) ──
-  async function getOneImage(scenePrompt, imgSeed) {
+  async function getOneImage(scenePrompt) {
+    try { return await generateWithStableHorde(scenePrompt); }
+    catch (e) { console.log(`⚠️ Stable Horde img: ${e.message}`); }
+    // fal.ai as last resort
     if (process.env.FAL_KEY) {
       try { const { buffer } = await generateWithFal(scenePrompt); return buffer; }
       catch (e) { console.log(`⚠️ fal img: ${e.message}`); }
     }
-    if (process.env.HUGGINGFACE_TOKEN) {
-      try { const { buffer } = await generateWithHuggingFace(scenePrompt); return buffer; }
-      catch (e) { console.log(`⚠️ HF img: ${e.message}`); }
-    }
-    const encoded = encodeURIComponent(scenePrompt + ', cinematic, 4k');
-    const url = `https://image.pollinations.ai/prompt/${encoded}?model=flux-schnell&seed=${imgSeed}&width=512&height=512&nologo=true`;
-    try {
-      const r = await axios.get(url, { responseType: 'arraybuffer', timeout: 60000, headers: BROWSER_HEADERS });
-      const ct = r.headers['content-type'] || '';
-      if (ct.includes('image') && r.data?.byteLength > 500) return Buffer.from(r.data);
-    } catch (e) { console.log(`⚠️ Poll img: ${e.message}`); }
-    return generateWithStableHorde(scenePrompt);
+    throw new Error('All image sources failed');
   }
 
   // Generate all images in parallel
   const imagePromises = Array.from({ length: numImages }, (_, i) => {
     const scenePrompt = i === 0 ? fullPrompt : `${fullPrompt}, scene ${i + 1}, different angle`;
-    return getOneImage(scenePrompt, seed + i * 137)
+    return getOneImage(scenePrompt)
       .then(buf => { console.log(`✅ Image ${i + 1}/${numImages} OK`); return buf; })
       .catch(e => { console.log(`⚠️ Image ${i + 1} failed: ${e.message}`); return null; });
   });
