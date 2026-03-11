@@ -293,7 +293,7 @@ app.get('/api/generate-video', async (req, res) => {
   const { prompt, userId, duration } = req.query;
   if (!prompt) return res.status(400).json({ error: 'prompt required' });
 
-  const user = db.getUser(userId);
+  const user = await db.getUser(userId);
   if (!user || !user.isActive) {
     return res.status(403).json({ error: 'กรุณาสมัครสมาชิกก่อนสร้างวิดีโอ' });
   }
@@ -425,8 +425,8 @@ app.get('/api/generate-video', async (req, res) => {
 // ─────────────────────────────────────────────
 const ADMIN_PASS = process.env.ADMIN_PASSWORD || 'admin1234';
 
-app.get('/admin', (req, res) => {
-  const users = db.getAllUsers();
+app.get('/admin', async (req, res) => {
+  const users = await db.getAllUsers();
   const rows = Object.values(users).map(u => `
     <tr>
       <td style="font-size:11px;word-break:break-all">${u.userId}</td>
@@ -487,7 +487,7 @@ app.post('/admin/activate', express.urlencoded({ extended: true }), async (req, 
   if (!userId || !['trailer', 'vip'].includes(plan)) {
     return res.send('<script>alert("ข้อมูลไม่ถูกต้อง");history.back();</script>');
   }
-  db.activateUser(userId, plan);
+  await db.activateUser(userId, plan);
   await setRichMenu(userId, process.env.RICH_MENU_VIP_ID); // สลับเป็น VIP menu
   const planName = plan === 'trailer' ? 'Trailer (1 เดือน)' : 'VIP (1 ปี)';
   // Push notification to user
@@ -654,7 +654,7 @@ async function handleTextMessage(event) {
     }
     if (text === '/users') return handleAdminListUsers(event);
     if (text === '/quitmembers') {
-      db.deactivateUser(userId);
+      await db.deactivateUser(userId);
       await resetRichMenu(userId); // สลับกลับ default (locked) menu
       return client.replyMessage({
         replyToken: event.replyToken,
@@ -685,7 +685,7 @@ async function handleTextMessage(event) {
 //  Create Image
 // ─────────────────────────────────────────────
 async function handleCreateImage(event, userId) {
-  const user = db.getUser(userId);
+  const user = await db.getUser(userId);
   const plan = (user && user.isActive) ? user.plan : 'visitor';
   const pageUrl = `${process.env.BASE_URL}/public/create-image.html?userId=${userId}&plan=${plan}`;
   const imgUrl = `${process.env.BASE_URL}/public/richmessage-image.jpg`;
@@ -723,7 +723,7 @@ async function handleCreateImage(event, userId) {
 //  Create Video
 // ─────────────────────────────────────────────
 async function handleCreateVideo(event, userId) {
-  const user = db.getUser(userId);
+  const user = await db.getUser(userId);
 
   if (!user || !user.isActive) {
     return client.replyMessage({
@@ -907,7 +907,7 @@ async function handleAdminActivate(event, targetUserId, plan) {
     });
   }
 
-  db.activateUser(targetUserId, plan);
+  await db.activateUser(targetUserId, plan);
   await setRichMenu(targetUserId, process.env.RICH_MENU_VIP_ID); // สลับเป็น VIP menu
   const planName = planLabel(plan);
 
@@ -943,7 +943,7 @@ async function handleAdminActivate(event, targetUserId, plan) {
 //  Admin: list users
 // ─────────────────────────────────────────────
 async function handleAdminListUsers(event) {
-  const users = db.getAllUsers();
+  const users = await db.getAllUsers();
   const list = Object.values(users)
     .map((u) => `${u.userId.slice(0, 12)}... | ${u.plan} | ${u.isActive ? '✅' : '❌'} | exp: ${u.expiresAt ? u.expiresAt.slice(0, 10) : '-'}`)
     .join('\n');
