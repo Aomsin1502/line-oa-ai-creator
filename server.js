@@ -159,6 +159,23 @@ async function generateWithStableHorde(prompt) {
   return imgBuf;
 }
 
+// ── Cloudflare Workers AI — FLUX Schnell (free tier, ~5-15s) ────
+async function generateWithCloudflare(prompt) {
+  const accountId = process.env.CF_ACCOUNT_ID;
+  const token = process.env.CF_API_TOKEN;
+  if (!accountId || !token) throw new Error('No Cloudflare credentials');
+  const resp = await axios.post(
+    `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/black-forest-labs/flux-1-schnell`,
+    { prompt, steps: 4 },
+    { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, timeout: 60000 }
+  );
+  const b64 = resp.data?.result?.image;
+  if (!b64) throw new Error(`No image from Cloudflare: ${JSON.stringify(resp.data).slice(0,100)}`);
+  const buf = Buffer.from(b64, 'base64');
+  if (buf.length < 500) throw new Error(`CF image too small: ${buf.length}b`);
+  return { buffer: buf, ct: 'image/jpeg' };
+}
+
 // ── fal.ai FLUX Schnell (requires FAL_KEY env var — free signup) ──
 async function generateWithFal(prompt) {
   const token = process.env.FAL_KEY;
@@ -208,7 +225,19 @@ app.get('/api/generate-image', async (req, res) => {
   const seed = Math.floor(Math.random() * 999999);
   const fullPrompt = await translateToEnglish(prompt);
 
-  // ── 1. Stable Horde (registered key = priority queue) ────────────
+  // ── 1. Cloudflare Workers AI — FLUX Schnell (free, ~5-15s) ───────
+  if (process.env.CF_ACCOUNT_ID && process.env.CF_API_TOKEN) {
+    try {
+      console.log('☁️ Cloudflare FLUX...');
+      const { buffer, ct } = await generateWithCloudflare(fullPrompt);
+      console.log(`✅ Cloudflare OK: ${buffer.length}b`);
+      res.set('Content-Type', ct);
+      res.set('Cache-Control', 'no-store');
+      return res.send(buffer);
+    } catch (e) { console.log(`⚠️ Cloudflare: ${e.message}`); }
+  }
+
+  // ── 2. Stable Horde (registered key = priority queue) ────────────
   try {
     console.log('🐴 Stable Horde...');
     const buf = await generateWithStableHorde(fullPrompt);
@@ -218,7 +247,7 @@ app.get('/api/generate-image', async (req, res) => {
     return res.send(buf);
   } catch (e) { console.log(`⚠️ Stable Horde: ${e.message}`); }
 
-  // ── 2. fal.ai fallback (if credit remains) ──────────────────────
+  // ── 3. fal.ai fallback (if credit remains) ──────────────────────
   if (process.env.FAL_KEY) {
     try {
       console.log('⚡ fal.ai fallback...');
@@ -257,9 +286,12 @@ app.get('/api/generate-video', async (req, res) => {
 
   // ── Generate images (same fallback chain as image proxy) ──
   async function getOneImage(scenePrompt) {
+    if (process.env.CF_ACCOUNT_ID && process.env.CF_API_TOKEN) {
+      try { const { buffer } = await generateWithCloudflare(scenePrompt); return buffer; }
+      catch (e) { console.log(`⚠️ CF img: ${e.message}`); }
+    }
     try { return await generateWithStableHorde(scenePrompt); }
     catch (e) { console.log(`⚠️ Stable Horde img: ${e.message}`); }
-    // fal.ai as last resort
     if (process.env.FAL_KEY) {
       try { const { buffer } = await generateWithFal(scenePrompt); return buffer; }
       catch (e) { console.log(`⚠️ fal img: ${e.message}`); }
