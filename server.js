@@ -686,15 +686,8 @@ async function handleTextMessage(event) {
 // ─────────────────────────────────────────────
 async function handleCreateImage(event, userId) {
   const user = await db.getUser(userId);
-
-  if (!user || !user.isActive) {
-    return client.replyMessage({
-      replyToken: event.replyToken,
-      messages: [lockedMessage()],
-    });
-  }
-
-  const pageUrl = `${process.env.BASE_URL}/public/create-image.html?userId=${userId}&plan=${user.plan}`;
+  const plan = (user && user.isActive) ? user.plan : 'visitor';
+  const pageUrl = `${process.env.BASE_URL}/public/create-image.html?userId=${userId}&plan=${plan}`;
   const imgUrl = `${process.env.BASE_URL}/public/richmessage-image.jpg`;
 
   return client.replyMessage({
