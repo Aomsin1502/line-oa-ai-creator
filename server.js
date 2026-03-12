@@ -298,10 +298,10 @@ app.get('/api/generate-video', async (req, res) => {
     return res.status(403).json({ error: 'กรุณาสมัครสมาชิกก่อนสร้างวิดีโอ' });
   }
 
-  const maxSec = user.plan === 'vip' ? 60 : 30;
+  const maxSec = user.plan === 'vip' ? 1200 : 300;
   const durationSec = Math.min(Math.max(parseInt(duration || 15), 10), maxSec);
-  // 5 seconds per image clip (Ken Burns); max 8 images to cap generation time
-  const numImages = Math.min(Math.max(Math.ceil(durationSec / 5), 2), 8);
+  // 30 seconds per image clip; max 20 images to cap generation time
+  const numImages = Math.min(Math.max(Math.ceil(durationSec / 30), 2), 20);
   const secPerClip = durationSec / numImages;
   const FPS = 25;
   const seed = Math.floor(Math.random() * 999999);
@@ -394,7 +394,7 @@ app.get('/api/generate-video', async (req, res) => {
 
     console.log(`🎬 ffmpeg xfade: ${N} images, ${actualSecPerClip.toFixed(1)}s each, fade=${fadeDur.toFixed(2)}s`);
     await new Promise((resolve, reject) => {
-      execFile(ffmpegPath, ffmpegArgs, { timeout: 180000 }, (err, _stdout, stderr) => {
+      execFile(ffmpegPath, ffmpegArgs, { timeout: 600000 }, (err, _stdout, stderr) => {
         if (err) {
           console.error('❌ ffmpeg error:', stderr?.slice(-500));
           reject(new Error(err.message));
@@ -686,8 +686,15 @@ async function handleTextMessage(event) {
 // ─────────────────────────────────────────────
 async function handleCreateImage(event, userId) {
   const user = await db.getUser(userId);
-  const plan = (user && user.isActive) ? user.plan : 'visitor';
-  const pageUrl = `${process.env.BASE_URL}/public/create-image.html?userId=${userId}&plan=${plan}`;
+
+  if (!user || !user.isActive) {
+    return client.replyMessage({
+      replyToken: event.replyToken,
+      messages: [lockedMessage()],
+    });
+  }
+
+  const pageUrl = `${process.env.BASE_URL}/public/create-image.html?userId=${userId}&plan=${user.plan}`;
   const imgUrl = `${process.env.BASE_URL}/public/richmessage-image.jpg`;
 
   return client.replyMessage({
@@ -732,7 +739,7 @@ async function handleCreateVideo(event, userId) {
     });
   }
 
-  const maxDuration = user.plan === 'vip' ? 60 : 30; // seconds
+  const maxDuration = user.plan === 'vip' ? 1200 : 300; // seconds
   const pageUrl = `${process.env.BASE_URL}/public/create-video.html?userId=${userId}&plan=${user.plan}&maxDuration=${maxDuration}`;
   const imgUrl = user.plan === 'vip'
     ? `${process.env.BASE_URL}/public/richmessage-video-vip.jpg`
